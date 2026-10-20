@@ -326,6 +326,7 @@ export interface DocumentItem {
   file_size: number;
   mime_type: string;
   notes?: string;
+  file_path?: string;
   created_at: string;
   patient_name?: string;
 }

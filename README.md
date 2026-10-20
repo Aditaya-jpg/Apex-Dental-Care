@@ -65,6 +65,15 @@ Apex Dental Care is a **production-ready, end-to-end dental clinic management an
     - Live KPIs: Total Patients, Appointments Today, Pending Treatments, Revenue Collected, Outstanding Receivables, Follow-ups Due.
     - Recharts visual analytics: Revenue stream trends, appointment status distributions, and procedure volume charts.
 
+11. **Oral-3D Deep Learning 3D Teeth & X-Ray Suite (Doctor Portal):**
+    - Seamless AI-powered reconstruction of interactive 3D teeth, jawbone, and arch structure from standard 2D panoramic radiographs (OPGs).
+    - WebGL 3D Viewport with OrbitControls, anatomical angle presets, and 5 clinical shaders (Enamel Bone, CT Heatmap, Wireframe, Surface Normals, Translucent X-Ray).
+    - Multi-Planar Reconstruction (MPR) orthogonal cross-section scrubbers (Axial, Coronal, Sagittal).
+    - Clinical dental arch biometrics: Arch Width, Depth, Height (mm) and Hard Volume (cm³).
+    - 3D Model export center: Watertight STL (3D Printing / Aligners), OBJ (CAD / Exocad), GLB (Web / AR), and NIfTI (`.nii.gz`).
+    - Longitudinal patient file storage: 3D models and findings attach directly to the patient's record under the **X-rays (3D)** tab.
+    - For full architecture, neural pipeline, and paper citations, see [ORAL_3D_README.md](file:///d:/oral_3d/Apex-Dental-Care-main/ORAL_3D_README.md).
+
 ---
 
 ## 🏗️ Technology Stack

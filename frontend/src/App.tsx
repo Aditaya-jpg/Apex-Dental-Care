@@ -13,6 +13,7 @@ import PatientDetail from './pages/PatientDetail';
 import Appointments from './pages/Appointments';
 import Treatments from './pages/Treatments';
 import Prescriptions from './pages/Prescriptions';
+import Xrays from './pages/Xrays';
 import Billing from './pages/Billing';
 import Followups from './pages/Followups';
 import Documents from './pages/Documents';
@@ -69,6 +70,14 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['admin', 'dentist']}>
                     <Prescriptions />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="xrays"
+                element={
+                  <ProtectedRoute allowedRoles={['admin', 'dentist']}>
+                    <Xrays />
                   </ProtectedRoute>
                 }
               />

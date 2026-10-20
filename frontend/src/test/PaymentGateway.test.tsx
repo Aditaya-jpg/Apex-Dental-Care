@@ -20,8 +20,8 @@ describe('OnlinePaymentModal Component', () => {
     issue_date: '2026-09-28',
     due_date: '2026-10-05',
     subtotal: 10000,
-    tax_amount: 0,
-    discount_amount: 0,
+    tax: 0,
+    discount: 0,
     total: 10000,
     paid_amount: 3000,
     balance: 7000,
@@ -42,6 +42,7 @@ describe('OnlinePaymentModal Component', () => {
         invoice={mockInvoice}
         isOpen={true}
         onClose={vi.fn()}
+        onSuccess={vi.fn()}
       />
     );
 
@@ -58,6 +59,7 @@ describe('OnlinePaymentModal Component', () => {
         invoice={mockInvoice}
         isOpen={true}
         onClose={vi.fn()}
+        onSuccess={vi.fn()}
       />
     );
 
@@ -110,6 +112,7 @@ describe('OnlinePaymentModal Component', () => {
         invoice={mockInvoice}
         isOpen={true}
         onClose={vi.fn()}
+        onSuccess={vi.fn()}
       />
     );
 

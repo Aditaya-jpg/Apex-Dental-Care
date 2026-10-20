@@ -12,7 +12,8 @@ import {
   ShieldCheck,
   UserCog,
   Stethoscope,
-  FolderOpen
+  FolderOpen,
+  Scan,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
@@ -30,9 +31,10 @@ const navItems: NavItem[] = [
   { name: 'Appointments', to: '/appointments', icon: CalendarDays, roles: ['admin', 'dentist', 'receptionist'] },
   { name: 'Treatments', to: '/treatments', icon: Activity, roles: ['admin', 'dentist'] },
   { name: 'Prescriptions', to: '/prescriptions', icon: FileSpreadsheet, roles: ['admin', 'dentist'] },
+  { name: 'X-rays', to: '/xrays', icon: Scan, roles: ['admin', 'dentist'] },
   { name: 'Billing & Invoices', to: '/billing', icon: Receipt, roles: ['admin', 'receptionist'] },
   { name: 'Follow-ups', to: '/followups', icon: Clock, roles: ['admin', 'dentist', 'receptionist'] },
-  { name: 'Documents & X-Rays', to: '/documents', icon: FolderOpen, roles: ['admin', 'dentist', 'receptionist'] },
+  { name: 'Documents', to: '/documents', icon: FolderOpen, roles: ['admin', 'dentist', 'receptionist'] },
   { name: 'Reports', to: '/reports', icon: BarChart3, roles: ['admin', 'receptionist'] },
   { name: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, roles: ['admin'] },
   { name: 'Staff & Users', to: '/users', icon: UserCog, roles: ['admin'] },

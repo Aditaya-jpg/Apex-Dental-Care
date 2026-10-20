@@ -37,6 +37,7 @@ from app.routers import (
     treatments,
     users,
     visits,
+    xrays,
 )
 
 # Configure logging
@@ -98,6 +99,7 @@ app.include_router(dental_chart.router, prefix=api_prefix)
 app.include_router(treatments.router, prefix=api_prefix)
 app.include_router(prescriptions.router, prefix=api_prefix)
 app.include_router(documents.router, prefix=api_prefix)
+app.include_router(xrays.router, prefix=api_prefix)
 app.include_router(billing.router, prefix=api_prefix)
 app.include_router(followups.router, prefix=api_prefix)
 app.include_router(dashboard.router, prefix=api_prefix)

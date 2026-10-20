@@ -19,8 +19,13 @@ import {
   ArrowLeft,
   CheckCircle2,
   IndianRupee,
-  CreditCard
+  CreditCard,
+  Scan,
+  Box,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react';
+import { Oral3DViewer } from '../components/xrays/Oral3DViewer';
 import { formatINR, formatDateIN, formatDateTimeIN } from '../utils/formatters';
 import {
   Patient,
@@ -77,8 +82,10 @@ export const PatientDetail: React.FC = () => {
   const [timeline, setTimeline] = useState<any[]>([]);
 
   const [activeTab, setActiveTab] = useState<
-    'chart' | 'visits' | 'treatments' | 'prescriptions' | 'billing' | 'documents' | 'appointments' | 'followups' | 'history' | 'timeline'
+    'chart' | 'visits' | 'treatments' | 'prescriptions' | 'xrays' | 'billing' | 'documents' | 'appointments' | 'followups' | 'history' | 'timeline'
   >('chart');
+
+  const [active3DModel, setActive3DModel] = useState<string | null>(null);
 
   // Modals state
   const [selectedTooth, setSelectedTooth] = useState<number | null>(null);
@@ -261,8 +268,19 @@ export const PatientDetail: React.FC = () => {
           { id: 'visits', label: 'Examinations & Visits', count: visits.length },
           { id: 'treatments', label: 'Treatment Plans', count: plans.length },
           { id: 'prescriptions', label: 'Prescriptions', count: prescriptions.length },
+          {
+            id: 'xrays',
+            label: 'X-rays (3D)',
+            count: documents.filter(
+              (d) =>
+                d.document_type === 'xray' ||
+                d.document_type === 'opg' ||
+                d.document_type === 'cbct' ||
+                d.original_file_name.endsWith('.glb')
+            ).length,
+          },
           { id: 'billing', label: 'Billing & Invoices', count: invoices.length },
-          { id: 'documents', label: 'X-Rays & Documents', count: documents.length },
+          { id: 'documents', label: 'Documents', count: documents.filter((d) => !['xray', 'opg', 'cbct'].includes(d.document_type)).length },
           { id: 'appointments', label: 'Appointments', count: appointments.length },
           { id: 'followups', label: 'Follow-ups', count: followups.length },
           { id: 'history', label: 'Medical/Dental History' },
@@ -728,7 +746,181 @@ export const PatientDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 6: DOCUMENTS & X-RAYS */}
+      {/* Tab: X-RAYS & ORAL-3D RECONSTRUCTIONS */}
+      {activeTab === 'xrays' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 to-slate-850 p-5 rounded-2xl border border-slate-800 text-white shadow-md">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400 border border-teal-500/30">
+                  <Scan className="w-4 h-4" />
+                </span>
+                <h2 className="text-sm font-bold tracking-tight text-white">
+                  Patient Diagnostic X-rays & 3D Teeth Reconstructions
+                </h2>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Oral-3D deep learning reconstruction suite for panoramic radiographs (OPG / CBCT).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsDocModalOpen(true)}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Upload Scan</span>
+              </button>
+
+              <button
+                onClick={() => navigate(`/xrays?patientId=${patient.id}`)}
+                className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-700/20 flex items-center gap-1.5 transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Open X-rays Studio</span>
+                <ExternalLink className="w-3 h-3 ml-0.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive 3D Model Viewport Embedded in Patient Record */}
+          <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 shadow-xl space-y-2">
+            <div className="flex items-center justify-between px-2 text-xs text-slate-300">
+              <span className="font-bold flex items-center gap-2">
+                <Box className="w-4 h-4 text-teal-400" />
+                <span>Interactive 3D Teeth Reconstruction Viewer</span>
+              </span>
+              <span className="text-[10px] text-teal-400 font-mono">
+                {active3DModel ? 'Viewing Selected Scan' : 'Baseline Arch Geometry'}
+              </span>
+            </div>
+
+            <div className="h-[400px] w-full rounded-xl overflow-hidden">
+              <Oral3DViewer
+                modelUrl={active3DModel || '/oral3d/models/test_teeth_std.glb'}
+                activeShader="enamel"
+                className="h-full"
+              />
+            </div>
+          </div>
+
+          {/* List of X-Ray Records & Scans */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              Radiographs & 3D Scans on File ({documents.filter((d) => ['xray', 'opg', 'cbct'].includes(d.document_type) || d.original_file_name.endsWith('.glb')).length})
+            </h3>
+
+            {documents.filter((d) => ['xray', 'opg', 'cbct'].includes(d.document_type) || d.original_file_name.endsWith('.glb')).length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-3">
+                <Scan className="w-8 h-8 text-slate-300 mx-auto" />
+                <p className="text-xs text-slate-500 font-medium">
+                  No X-rays or 3D dental reconstructions recorded for {patient.first_name} yet.
+                </p>
+                <button
+                  onClick={() => navigate(`/xrays?patientId=${patient.id}`)}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-all"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Launch Oral-3D Reconstruction Studio
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {documents
+                  .filter((d) => ['xray', 'opg', 'cbct'].includes(d.document_type) || d.original_file_name.endsWith('.glb'))
+                  .map((doc) => {
+                    const is3D = doc.original_file_name.endsWith('.glb') || doc.file_name.endsWith('.glb');
+                    let parsedNotes: any = null;
+                    if (doc.notes) {
+                      try {
+                        parsedNotes = JSON.parse(doc.notes);
+                      } catch {
+                        parsedNotes = { text: doc.notes };
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={doc.id}
+                        className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-3 hover:border-teal-400 transition-all"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between text-xs mb-1.5">
+                            <span className="font-bold text-[10px] uppercase text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                              {is3D ? '3D Teeth Model' : doc.document_type.toUpperCase()}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(doc.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+
+                          <p className="text-xs font-bold text-slate-900 truncate" title={doc.original_file_name}>
+                            {doc.original_file_name}
+                          </p>
+
+                          {parsedNotes?.metrics && (
+                            <div className="mt-2 p-2 bg-slate-50 rounded-lg text-[10px] space-y-0.5 text-slate-600 font-mono">
+                              <div className="flex justify-between">
+                                <span>Arch Width:</span>
+                                <span className="font-bold text-slate-800">{parsedNotes.metrics.arch_width_mm} mm</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Volume:</span>
+                                <span className="font-bold text-slate-800">{parsedNotes.metrics.volume_cm3} cm³</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {parsedNotes?.clinical_notes && (
+                            <p className="text-[11px] text-slate-500 mt-1.5 line-clamp-2 italic">
+                              "{parsedNotes.clinical_notes}"
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs gap-2">
+                          {is3D ? (
+                            <button
+                              onClick={() => {
+                                const targetUrl =
+                                  doc.file_path && doc.file_path.startsWith('/')
+                                    ? doc.file_path
+                                    : `/api/v1/documents/${doc.id}/download`;
+                                setActive3DModel(targetUrl);
+                              }}
+                              className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition-colors"
+                            >
+                              <Box className="w-3 h-3" />
+                              <span>View in 3D</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => navigate(`/xrays?patientId=${patient.id}`)}
+                              className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              <span>Reconstruct 3D</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => documentsApi.download(doc.id, doc.original_file_name)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1 transition-colors text-xs"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Download</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 6: DOCUMENTS */}
       {activeTab === 'documents' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
