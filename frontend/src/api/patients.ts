@@ -110,8 +110,12 @@ export const patientsApi = {
         return api.delete<{ message: string }>(`/patients/${id}/surgical-logs/${logId}`);
     },
 
-    getMiscellaneous: (id: number) => {
-        return api.get<Record<string, string>>(`/patients/${id}/miscellaneous`);
+    getMiscellaneous: async (id: number): Promise<Record<string, string>> => {
+        const res = await api.get<any>(`/patients/${id}/miscellaneous`);
+        if (res && typeof res === 'object' && 'records' in res && res.records && typeof res.records === 'object') {
+            return res.records;
+        }
+        return (res && typeof res === 'object') ? res : {};
     },
 
     updateMiscellaneous: (id: number, records: Record<string, string>) => {

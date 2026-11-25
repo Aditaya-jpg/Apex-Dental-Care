@@ -1,7 +1,7 @@
 import { api } from './client';
 import {
     PatientPortalAppointment,
-    PatientPortalPrescription,
+    PatientPortalPrescriptionsResponse,
     PatientPortalSharedItems,
 } from '../types';
 
@@ -12,10 +12,15 @@ export const patientPortalApi = {
         return Array.isArray(res?.appointments) ? res.appointments : [];
     },
 
-    getPrescriptions: async (): Promise<PatientPortalPrescription[]> => {
+    getPrescriptions: async (): Promise<PatientPortalPrescriptionsResponse> => {
         const res = await api.get<any>('/patient-portal/prescriptions');
-        if (Array.isArray(res)) return res;
-        return Array.isArray(res?.prescriptions) ? res.prescriptions : [];
+        if (Array.isArray(res)) {
+            return { prescriptions: res, care_instructions: [] };
+        }
+        return {
+            prescriptions: Array.isArray(res?.prescriptions) ? res.prescriptions : [],
+            care_instructions: Array.isArray(res?.care_instructions) ? res.care_instructions : [],
+        };
     },
 
     getSharedItems: () => {

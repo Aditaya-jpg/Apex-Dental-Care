@@ -1402,9 +1402,9 @@ export const PatientDetail: React.FC = () => {
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         <div className="font-bold text-slate-900">{log.procedure_name}</div>
-                                                        {log.tooth_numbers && (
+                                                        {Array.isArray(log.tooth_numbers) && log.tooth_numbers.length > 0 && (
                                                             <div className="text-[11px] font-mono text-slate-500">
-                                                                Teeth: {log.tooth_numbers}
+                                                                Teeth: {log.tooth_numbers.join(', ')}
                                                             </div>
                                                         )}
                                                     </td>

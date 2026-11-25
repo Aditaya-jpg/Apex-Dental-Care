@@ -683,6 +683,22 @@ export interface PatientPortalPrescription {
     items: PrescriptionItem[];
 }
 
+export interface PatientPortalCareInstruction {
+    id: number;
+    event_type: string;
+    category: string;
+    title: string;
+    message: string;
+    language: LanguageCode;
+    scheduled_date?: string | null;
+    created_at: string;
+}
+
+export interface PatientPortalPrescriptionsResponse {
+    prescriptions: PatientPortalPrescription[];
+    care_instructions: PatientPortalCareInstruction[];
+}
+
 export interface PatientPortalSharedItems {
     notices: SharedNotice[];
     documents: DocumentItem[];

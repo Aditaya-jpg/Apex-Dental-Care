@@ -33,7 +33,7 @@ class NotificationSendRequest(BaseModel):
     patient_id: int | None = None
     channel: str = Field(default="sms", pattern="^(sms|email)$")
     category: str = "custom_alert"
-    title: str = Field(min_length=1, max_length=255)
+    title: str = Field(default="PGI Dental Alert", min_length=1, max_length=255)
     message_body: str = Field(min_length=1)
     language: str = Field(default="en", pattern="^(en|hi|pa)$")
     recipient: str | None = None
@@ -72,6 +72,7 @@ def _serialize_care_log(entry: CareAndSystemLog) -> dict[str, Any]:
         "sender_id": p.get("sender_id") or p.get("sms_sender_id"),
         "recipient": p.get("recipient"),
         "category": p.get("category") or p.get("recall_type"),
+        "recall_type": p.get("recall_type") or p.get("category"),
         "message_body": p.get("message_body"),
         "payload_json": p,
         "created_at": entry.created_at.isoformat() if entry.created_at else None,

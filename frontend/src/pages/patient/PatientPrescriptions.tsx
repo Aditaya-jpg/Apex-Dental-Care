@@ -20,13 +20,19 @@ export const PatientPrescriptions: React.FC = () => {
     const [downloadingId, setDownloadingId] = useState<number | null>(null);
     const [downloadError, setDownloadError] = useState<string | null>(null);
 
-    const { data: prescriptions = [], isLoading, error } = useQuery({
+    const { data, isLoading, error } = useQuery({
         queryKey: ['patient-portal-prescriptions'],
         queryFn: () => patientPortalApi.getPrescriptions(),
     });
 
+    const prescriptions = data?.prescriptions ?? [];
+    const careInstructions = data?.care_instructions ?? [];
+
     const filtered = prescriptions.filter((rx) =>
         languageFilter === 'all' ? true : rx.language === languageFilter
+    );
+    const filteredCare = careInstructions.filter((ci) =>
+        languageFilter === 'all' ? true : ci.language === languageFilter
     );
 
     const handleDownloadPdf = async (rx: PatientPortalPrescription) => {
@@ -98,7 +104,7 @@ export const PatientPrescriptions: React.FC = () => {
                         <div key={i} className="h-44 rounded-2xl bg-white border border-slate-200 animate-pulse" />
                     ))}
                 </div>
-            ) : filtered.length === 0 ? (
+            ) : filtered.length === 0 && filteredCare.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
                     <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
                         <FileText className="w-6 h-6" aria-hidden="true" />
@@ -111,8 +117,53 @@ export const PatientPrescriptions: React.FC = () => {
                     </p>
                 </div>
             ) : (
-                <div className="space-y-5">
-                    {filtered.map((rx) => {
+                <div className="space-y-6">
+                    {filteredCare.length > 0 && (
+                        <section aria-labelledby="care-instructions-heading" className="space-y-3">
+                            <h2
+                                id="care-instructions-heading"
+                                className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2"
+                            >
+                                <HeartPulse className="w-4 h-4 text-teal-600" aria-hidden="true" />
+                                <span>Doctor Care Instructions & Preventive Reminders</span>
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {filteredCare.map((ci) => (
+                                    <article
+                                        key={`care-${ci.id}`}
+                                        className="bg-white rounded-2xl border border-teal-200/80 shadow-sm p-4 space-y-2"
+                                    >
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <span className="font-semibold text-sm text-slate-900">{ci.title}</span>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-700 border border-teal-200">
+                                                    {LANGUAGE_LABELS[ci.language] || ci.language}
+                                                </span>
+                                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium capitalize bg-slate-100 text-slate-600">
+                                                    {ci.category.replace(/_/g, ' ')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">
+                                            {ci.message}
+                                        </p>
+                                        <div className="text-xs text-slate-500 flex items-center gap-3 pt-1">
+                                            <span className="inline-flex items-center gap-1">
+                                                <Calendar className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                                                {ci.scheduled_date
+                                                    ? `Scheduled: ${formatDateIN(ci.scheduled_date)}`
+                                                    : formatDateIN(ci.created_at)}
+                                            </span>
+                                        </div>
+                                    </article>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {filtered.length > 0 && (
+                        <div className="space-y-5">
+                            {filtered.map((rx) => {
                         const isInstructionOnly =
                             rx.record_type === 'instruction' || rx.record_type === 'preventive';
                         return (
@@ -256,6 +307,8 @@ export const PatientPrescriptions: React.FC = () => {
                             </article>
                         );
                     })}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

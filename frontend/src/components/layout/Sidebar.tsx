@@ -193,14 +193,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         let observer: IntersectionObserver | undefined;
         if (typeof IntersectionObserver !== 'undefined' && isMobileOpen) {
             const visibleThreshold = Math.min(0.05, 1 / Math.max(window.innerWidth, 1));
+            let hasBeenVisible = false;
             observer = new IntersectionObserver(
                 (entries) => {
                     const entry = entries[entries.length - 1];
-                    if (entry && entry.intersectionRatio < visibleThreshold) {
+                    if (!entry) return;
+                    if (entry.intersectionRatio >= visibleThreshold) {
+                        hasBeenVisible = true;
+                    } else if (hasBeenVisible && entry.intersectionRatio < visibleThreshold) {
                         finalizeClose();
                     }
                 },
-                { root: dialog, threshold: [visibleThreshold, 1] }
+                { root: dialog, threshold: [0, visibleThreshold, 0.5, 1] }
             );
             observer.observe(sheet);
         }

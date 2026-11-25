@@ -138,6 +138,7 @@ export default function PatientCare() {
                 patient_id: Number(alertPatientId),
                 channel: alertChannel,
                 language: alertLang,
+                title: `PGI Dental ${alertChannel.toUpperCase()} Alert`,
                 message_body: alertMessage,
                 category: 'manual_alert',
             }),
@@ -503,7 +504,9 @@ export default function PatientCare() {
                                                     {r.cr_number || `PAT-${r.patient_id}`}
                                                 </td>
                                                 <td className="py-3 px-4 font-bold text-slate-900">{r.patient_name}</td>
-                                                <td className="py-3 px-4 capitalize">{r.recall_type.replace(/_/g, ' ')}</td>
+                                                <td className="py-3 px-4 capitalize">
+                                                    {(r.recall_type || (r as any).category || 'regular_checkup').replace(/_/g, ' ')}
+                                                </td>
                                                 <td className="py-3 px-4 font-mono">{formatDateIN(r.scheduled_date)}</td>
                                                 <td className="py-3 px-4 uppercase font-bold text-[10px]">{r.language}</td>
                                                 <td className="py-3 px-4">

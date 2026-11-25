@@ -32,6 +32,33 @@ const defaultTooth = (toothNumber: number): PerioToothData => ({
     plaque_index: 0,
 });
 
+const normalizeSites = (raw: Record<string, any> | undefined, fallback: number): PerioSites => {
+    const out = defaultSites(fallback);
+    if (!raw || typeof raw !== 'object') return out;
+    SITES.forEach((site) => {
+        const val = raw[site] ?? raw[site.toLowerCase()];
+        if (val !== undefined && val !== null && !Number.isNaN(Number(val))) {
+            out[site] = Number(val);
+        }
+    });
+    return out;
+};
+
+const normalizeGrade = (raw: unknown): '0' | 'I' | 'II' | 'III' => {
+    if (raw === 'I' || raw === 1 || raw === '1') return 'I';
+    if (raw === 'II' || raw === 2 || raw === '2') return 'II';
+    if (raw === 'III' || raw === 3 || raw === '3') return 'III';
+    return '0';
+};
+
+const normalizeBop = (raw: unknown): boolean => {
+    if (typeof raw === 'boolean') return raw;
+    if (raw && typeof raw === 'object') {
+        return Object.values(raw as Record<string, unknown>).some(Boolean);
+    }
+    return Boolean(raw);
+};
+
 const getPocketClass = (mm: number): string => {
     if (mm >= 6) return 'bg-rose-100 text-rose-900 border-rose-400 font-extrabold';
     if (mm >= 4) return 'bg-amber-100 text-amber-900 border-amber-400 font-bold';
@@ -65,8 +92,13 @@ export const PerioChart: React.FC<PerioChartProps> = ({ patientId, canEdit }) =>
                         ? {
                             ...defaultTooth(n),
                             ...existing,
-                            probing_depths: { ...defaultSites(2), ...(existing.probing_depths || {}) },
-                            recession: { ...defaultSites(0), ...(existing.recession || {}) },
+                            tooth_number: n,
+                            probing_depths: normalizeSites(existing.probing_depths as any, 2),
+                            recession: normalizeSites(existing.recession as any, 0),
+                            bop: normalizeBop(existing.bop),
+                            mobility: normalizeGrade(existing.mobility),
+                            furcation: normalizeGrade(existing.furcation),
+                            plaque_index: Number(existing.plaque_index ?? 0),
                         }
                         : defaultTooth(n);
                 });

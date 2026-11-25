@@ -21,18 +21,16 @@ interface PatientFormModalProps {
 }
 
 export const DISEASE_OPTIONS = [
-    'Dental Caries',
-    'Gingivitis',
-    'Periodontitis',
-    'Pulpitis',
-    'Dental Abscess',
-    'Tooth Fracture',
-    'Malocclusion',
-    'Tooth Sensitivity',
-    'Missing Teeth',
-    'Oral Lesions',
-    'Impacted Tooth',
-    'Other',
+    'Dental Caries & Restorative',
+    'Endodontics (RCT & Pulpitis)',
+    'Periodontitis & Gingival',
+    'Oral & Maxillofacial Surgery',
+    'Prosthodontics & Implants',
+    'Orthodontics & Malocclusion',
+    'Pediatric & Preventive',
+    'Oral Medicine & Pathology',
+    'Trauma & Emergency',
+    'Special Care Dentistry',
 ];
 
 const PRESET_KEYWORDS = [
