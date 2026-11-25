@@ -77,7 +77,7 @@ def _to_attendance_item(appt: Appointment) -> AttendanceItemResponse:
 @router.get("/today")
 def get_today_attendance(
     target_date: date | None = Query(default=None, alias="date"),
-    current_user: User = Depends(require_roles("admin", "doctor", "receptionist")),
+    current_user: User = Depends(require_roles("admin", "receptionist")),
     db: Session = Depends(get_db),
 ):
     """
@@ -114,7 +114,7 @@ def mark_attendance(
     appointment_id: int,
     payload: AttendanceMarkRequest,
     request: Request,
-    current_user: User = Depends(require_roles("admin", "doctor", "receptionist")),
+    current_user: User = Depends(require_roles("admin", "receptionist")),
     db: Session = Depends(get_db),
 ):
     """Mark attendance for an appointment (checked_in, present, in_treatment, completed, missed)."""
@@ -181,7 +181,7 @@ def mark_attendance(
 def walkin_checkin(
     payload: WalkInCheckInRequest,
     request: Request,
-    current_user: User = Depends(require_roles("admin", "doctor", "receptionist")),
+    current_user: User = Depends(require_roles("admin", "receptionist")),
     db: Session = Depends(get_db),
 ):
     """Mark attendance for a walk-in registered patient by CR Number, Patient Code, or Patient ID."""

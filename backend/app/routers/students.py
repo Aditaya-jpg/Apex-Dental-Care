@@ -202,6 +202,129 @@ def register_student(
     return _build_student_response(db, student)
 
 
+
+@router.get("/{student_id}/workspace")
+def get_student_workspace(
+    student_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """
+    Doctor / Admin: View any student's assigned patients, clinical progress, and recent activity.
+    """
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
+        )
+
+    patients = (
+        db.query(Patient)
+        .filter(Patient.student_id == student.id, Patient.is_deleted == False)
+        .order_by(Patient.id.asc())
+        .all()
+    )
+
+    patient_ids = [p.id for p in patients]
+    records = (
+        db.query(ClinicalRecord)
+        .filter(
+            or_(
+                ClinicalRecord.student_id == student.id,
+                ClinicalRecord.patient_id.in_(patient_ids) if patient_ids else False,
+            )
+        )
+        .order_by(ClinicalRecord.record_date.desc(), ClinicalRecord.id.desc())
+        .all()
+    )
+
+    appts = (
+        db.query(Appointment)
+        .filter(
+            or_(
+                Appointment.student_id == student.id,
+                Appointment.patient_id.in_(patient_ids) if patient_ids else False,
+            )
+        )
+        .order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc())
+        .all()
+    )
+
+    today = datetime.now(UTC).date()
+    patient_map = {p.id: p for p in patients}
+
+    patient_rows = []
+    for p in patients:
+        p_visits = [r for r in records if r.patient_id == p.id and r.record_type == "visit"]
+        p_plans = [r for r in records if r.patient_id == p.id and r.record_type == "treatment_plan"]
+        p_surgeries = [r for r in records if r.patient_id == p.id and r.record_type == "surgical_log"]
+        p_upcoming = [
+            a for a in appts
+            if a.patient_id == p.id and a.appointment_date >= today and a.status not in ("cancelled", "completed")
+        ]
+        last_visit = p_visits[0] if p_visits else None
+        last_payload = (last_visit.payload_json or {}) if last_visit else {}
+        latest_plan = p_plans[0] if p_plans else None
+
+        patient_rows.append({
+            "id": p.id,
+            "cr_number": p.cr_number,
+            "patient_code": p.patient_code,
+            "full_name": p.full_name,
+            "age": p.age,
+            "gender": p.gender,
+            "phone": p.phone,
+            "severity_level": p.severity_level or "none",
+            "pain_scale": p.pain_scale or 0,
+            "tracker_stage": p.tracker_stage or "registered",
+            "disease_categories": p.disease_categories or [],
+            "attending_doctor": p.doctor.full_name if p.doctor else None,
+            "visits_count": len(p_visits),
+            "treatment_plans_count": len(p_plans),
+            "surgical_logs_count": len(p_surgeries),
+            "latest_plan_status": latest_plan.status if latest_plan else None,
+            "last_visit_date": last_visit.record_date.isoformat() if last_visit else None,
+            "last_visit_diagnosis": last_payload.get("diagnosis") or (last_visit.title if last_visit else None),
+            "next_appointment_date": p_upcoming[0].appointment_date.isoformat() if p_upcoming else None,
+        })
+
+    student_records = [r for r in records if r.student_id == student.id or r.patient_id in patient_map]
+    recent_activity = []
+    for r in student_records[:12]:
+        pat = patient_map.get(r.patient_id)
+        recent_activity.append({
+            "id": r.id,
+            "record_type": r.record_type,
+            "record_date": r.record_date.isoformat() if r.record_date else None,
+            "title": r.title or r.record_type.replace("_", " ").title(),
+            "status": r.status,
+            "patient_id": r.patient_id,
+            "patient_name": pat.full_name if pat else (r.patient.full_name if r.patient else "Patient"),
+            "cr_number": pat.cr_number if pat else None,
+        })
+
+    upcoming_count = sum(
+        1 for a in appts if a.appointment_date >= today and a.status not in ("cancelled", "completed")
+    )
+    missed_count = sum(1 for a in appts if a.is_missed or a.attendance_status == "missed")
+
+    return {
+        "student": _build_student_response(db, student).model_dump(mode="json"),
+        "summary": {
+            "assigned_patients": len(patients),
+            "visits_recorded": sum(1 for r in student_records if r.record_type == "visit"),
+            "treatment_plans": sum(1 for r in student_records if r.record_type == "treatment_plan"),
+            "surgical_logs": sum(1 for r in student_records if r.record_type == "surgical_log"),
+            "prescriptions": sum(1 for r in student_records if r.record_type == "prescription"),
+            "upcoming_appointments": upcoming_count,
+            "missed_appointments": missed_count,
+        },
+        "patients": patient_rows,
+        "recent_activity": recent_activity,
+    }
+
+
 @router.get("", response_model=list[StudentResponse])
 def list_students(
     search: str | None = None,
@@ -267,6 +390,128 @@ def get_student(
             )
 
     return _build_student_response(db, student)
+
+
+@router.get("/{student_id}/workspace")
+def get_student_workspace(
+    student_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """
+    Doctor / Admin: View any student's assigned patients, clinical progress, and recent activity.
+    """
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
+        )
+
+    patients = (
+        db.query(Patient)
+        .filter(Patient.student_id == student.id, Patient.is_deleted == False)
+        .order_by(Patient.id.asc())
+        .all()
+    )
+
+    patient_ids = [p.id for p in patients]
+    records = (
+        db.query(ClinicalRecord)
+        .filter(
+            or_(
+                ClinicalRecord.student_id == student.id,
+                ClinicalRecord.patient_id.in_(patient_ids) if patient_ids else False,
+            )
+        )
+        .order_by(ClinicalRecord.record_date.desc(), ClinicalRecord.id.desc())
+        .all()
+    )
+
+    appts = (
+        db.query(Appointment)
+        .filter(
+            or_(
+                Appointment.student_id == student.id,
+                Appointment.patient_id.in_(patient_ids) if patient_ids else False,
+            )
+        )
+        .order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc())
+        .all()
+    )
+
+    today = datetime.now(UTC).date()
+    patient_map = {p.id: p for p in patients}
+
+    patient_rows = []
+    for p in patients:
+        p_visits = [r for r in records if r.patient_id == p.id and r.record_type == "visit"]
+        p_plans = [r for r in records if r.patient_id == p.id and r.record_type == "treatment_plan"]
+        p_surgeries = [r for r in records if r.patient_id == p.id and r.record_type == "surgical_log"]
+        p_upcoming = [
+            a for a in appts
+            if a.patient_id == p.id and a.appointment_date >= today and a.status not in ("cancelled", "completed")
+        ]
+        last_visit = p_visits[0] if p_visits else None
+        last_payload = (last_visit.payload_json or {}) if last_visit else {}
+        latest_plan = p_plans[0] if p_plans else None
+
+        patient_rows.append({
+            "id": p.id,
+            "cr_number": p.cr_number,
+            "patient_code": p.patient_code,
+            "full_name": p.full_name,
+            "age": p.age,
+            "gender": p.gender,
+            "phone": p.phone,
+            "severity_level": p.severity_level or "none",
+            "pain_scale": p.pain_scale or 0,
+            "tracker_stage": p.tracker_stage or "registered",
+            "disease_categories": p.disease_categories or [],
+            "attending_doctor": p.doctor.full_name if p.doctor else None,
+            "visits_count": len(p_visits),
+            "treatment_plans_count": len(p_plans),
+            "surgical_logs_count": len(p_surgeries),
+            "latest_plan_status": latest_plan.status if latest_plan else None,
+            "last_visit_date": last_visit.record_date.isoformat() if last_visit else None,
+            "last_visit_diagnosis": last_payload.get("diagnosis") or (last_visit.title if last_visit else None),
+            "next_appointment_date": p_upcoming[0].appointment_date.isoformat() if p_upcoming else None,
+        })
+
+    student_records = [r for r in records if r.student_id == student.id or r.patient_id in patient_map]
+    recent_activity = []
+    for r in student_records[:12]:
+        pat = patient_map.get(r.patient_id)
+        recent_activity.append({
+            "id": r.id,
+            "record_type": r.record_type,
+            "record_date": r.record_date.isoformat() if r.record_date else None,
+            "title": r.title or r.record_type.replace("_", " ").title(),
+            "status": r.status,
+            "patient_id": r.patient_id,
+            "patient_name": pat.full_name if pat else (r.patient.full_name if r.patient else "Patient"),
+            "cr_number": pat.cr_number if pat else None,
+        })
+
+    upcoming_count = sum(
+        1 for a in appts if a.appointment_date >= today and a.status not in ("cancelled", "completed")
+    )
+    missed_count = sum(1 for a in appts if a.is_missed or a.attendance_status == "missed")
+
+    return {
+        "student": _build_student_response(db, student).model_dump(mode="json"),
+        "summary": {
+            "assigned_patients": len(patients),
+            "visits_recorded": sum(1 for r in student_records if r.record_type == "visit"),
+            "treatment_plans": sum(1 for r in student_records if r.record_type == "treatment_plan"),
+            "surgical_logs": sum(1 for r in student_records if r.record_type == "surgical_log"),
+            "prescriptions": sum(1 for r in student_records if r.record_type == "prescription"),
+            "upcoming_appointments": upcoming_count,
+            "missed_appointments": missed_count,
+        },
+        "patients": patient_rows,
+        "recent_activity": recent_activity,
+    }
 
 
 @router.put("/{student_id}", response_model=StudentResponse)
@@ -360,6 +605,129 @@ def update_student(
     )
 
     return _build_student_response(db, student)
+
+
+
+@router.get("/{student_id}/workspace")
+def get_student_workspace(
+    student_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """
+    Doctor / Admin: View any student's assigned patients, clinical progress, and recent activity.
+    """
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
+        )
+
+    patients = (
+        db.query(Patient)
+        .filter(Patient.student_id == student.id, Patient.is_deleted == False)
+        .order_by(Patient.id.asc())
+        .all()
+    )
+
+    patient_ids = [p.id for p in patients]
+    records = (
+        db.query(ClinicalRecord)
+        .filter(
+            or_(
+                ClinicalRecord.student_id == student.id,
+                ClinicalRecord.patient_id.in_(patient_ids) if patient_ids else False,
+            )
+        )
+        .order_by(ClinicalRecord.record_date.desc(), ClinicalRecord.id.desc())
+        .all()
+    )
+
+    appts = (
+        db.query(Appointment)
+        .filter(
+            or_(
+                Appointment.student_id == student.id,
+                Appointment.patient_id.in_(patient_ids) if patient_ids else False,
+            )
+        )
+        .order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc())
+        .all()
+    )
+
+    today = datetime.now(UTC).date()
+    patient_map = {p.id: p for p in patients}
+
+    patient_rows = []
+    for p in patients:
+        p_visits = [r for r in records if r.patient_id == p.id and r.record_type == "visit"]
+        p_plans = [r for r in records if r.patient_id == p.id and r.record_type == "treatment_plan"]
+        p_surgeries = [r for r in records if r.patient_id == p.id and r.record_type == "surgical_log"]
+        p_upcoming = [
+            a for a in appts
+            if a.patient_id == p.id and a.appointment_date >= today and a.status not in ("cancelled", "completed")
+        ]
+        last_visit = p_visits[0] if p_visits else None
+        last_payload = (last_visit.payload_json or {}) if last_visit else {}
+        latest_plan = p_plans[0] if p_plans else None
+
+        patient_rows.append({
+            "id": p.id,
+            "cr_number": p.cr_number,
+            "patient_code": p.patient_code,
+            "full_name": p.full_name,
+            "age": p.age,
+            "gender": p.gender,
+            "phone": p.phone,
+            "severity_level": p.severity_level or "none",
+            "pain_scale": p.pain_scale or 0,
+            "tracker_stage": p.tracker_stage or "registered",
+            "disease_categories": p.disease_categories or [],
+            "attending_doctor": p.doctor.full_name if p.doctor else None,
+            "visits_count": len(p_visits),
+            "treatment_plans_count": len(p_plans),
+            "surgical_logs_count": len(p_surgeries),
+            "latest_plan_status": latest_plan.status if latest_plan else None,
+            "last_visit_date": last_visit.record_date.isoformat() if last_visit else None,
+            "last_visit_diagnosis": last_payload.get("diagnosis") or (last_visit.title if last_visit else None),
+            "next_appointment_date": p_upcoming[0].appointment_date.isoformat() if p_upcoming else None,
+        })
+
+    student_records = [r for r in records if r.student_id == student.id or r.patient_id in patient_map]
+    recent_activity = []
+    for r in student_records[:12]:
+        pat = patient_map.get(r.patient_id)
+        recent_activity.append({
+            "id": r.id,
+            "record_type": r.record_type,
+            "record_date": r.record_date.isoformat() if r.record_date else None,
+            "title": r.title or r.record_type.replace("_", " ").title(),
+            "status": r.status,
+            "patient_id": r.patient_id,
+            "patient_name": pat.full_name if pat else (r.patient.full_name if r.patient else "Patient"),
+            "cr_number": pat.cr_number if pat else None,
+        })
+
+    upcoming_count = sum(
+        1 for a in appts if a.appointment_date >= today and a.status not in ("cancelled", "completed")
+    )
+    missed_count = sum(1 for a in appts if a.is_missed or a.attendance_status == "missed")
+
+    return {
+        "student": _build_student_response(db, student).model_dump(mode="json"),
+        "summary": {
+            "assigned_patients": len(patients),
+            "visits_recorded": sum(1 for r in student_records if r.record_type == "visit"),
+            "treatment_plans": sum(1 for r in student_records if r.record_type == "treatment_plan"),
+            "surgical_logs": sum(1 for r in student_records if r.record_type == "surgical_log"),
+            "prescriptions": sum(1 for r in student_records if r.record_type == "prescription"),
+            "upcoming_appointments": upcoming_count,
+            "missed_appointments": missed_count,
+        },
+        "patients": patient_rows,
+        "recent_activity": recent_activity,
+    }
 
 
 @router.post("/{student_id}/revoke", response_model=MessageResponse)

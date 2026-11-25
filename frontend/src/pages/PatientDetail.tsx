@@ -619,288 +619,294 @@ export const PatientDetail: React.FC = () => {
             )}
 
             {/* =================================================================== */}
-            {/* 1. PRIORITY DEMOGRAPHICS HEADER CARD */}
+            {/* 1. PRIORITY PATIENT DOSSIER HEADER & TRIAGE CONSOLE */}
             {/* =================================================================== */}
-            <section aria-label="Patient Priority Demographics" className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-5">
-                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
-                    <div className="flex items-start gap-3.5 min-w-0">
-                        <button
-                            type="button"
-                            onClick={() => navigate('/patients')}
-                            aria-label="Back to patients directory"
-                            className="p-2 border border-slate-200 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors flex-shrink-0"
-                        >
-                            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-                        </button>
-
-                        <div className="w-14 h-14 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-700 flex items-center justify-center font-extrabold text-xl shadow-inner flex-shrink-0">
-                            {initials || 'PT'}
-                        </div>
-
-                        <div className="min-w-0 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                                    {displayName}
-                                </h1>
-                                <span className="font-mono text-xs font-extrabold text-teal-800 bg-teal-50 border border-teal-300 px-2.5 py-0.5 rounded-md">
-                                    CR: {patient.cr_number || patient.patient_code}
-                                </span>
-                                <span className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                                    {patient.patient_code}
-                                </span>
-                                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                                    {patient.age ? `${patient.age} yrs` : ''} {patient.gender}
-                                </span>
-                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1">
-                                    <Languages className="w-3 h-3" aria-hidden="true" />
-                                    {LANGUAGE_LABELS[patient.preferred_language || 'en']}
-                                </span>
-                                {patient.special_case_flag && (
-                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
-                                        Special Case
-                                    </span>
-                                )}
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-600 font-medium">
-                                <span className="flex items-center gap-1.5">
-                                    <Phone className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                                    {patient.phone}
-                                </span>
-                                {patient.email && (
-                                    <span className="flex items-center gap-1.5">
-                                        <Mail className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                                        {patient.email}
-                                    </span>
-                                )}
-                                <span className="flex items-center gap-1.5">
-                                    <Calendar className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                                    DOB: {formatDateIN(patient.date_of_birth)}
-                                </span>
-                                {patient.address && (
-                                    <span className="flex items-center gap-1.5">
-                                        <MapPin className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                                        {patient.address}
-                                    </span>
-                                )}
-                                {patient.blood_group && (
-                                    <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 font-bold rounded border border-rose-200 text-[10px]">
-                                        Blood: {patient.blood_group}
-                                    </span>
-                                )}
-                            </div>
-
-                            {(patient.case_keywords || []).length > 0 && (
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                    {(patient.case_keywords || []).map((kw) => (
-                                        <span
-                                            key={kw}
-                                            className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-semibold"
-                                        >
-                                            #{kw}
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Quick Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                        <button
-                            type="button"
-                            onClick={() => setIsCardModalOpen(true)}
-                            className="px-3 py-2 border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
-                        >
-                            <CreditCard className="w-3.5 h-3.5 text-teal-600" aria-hidden="true" />
-                            <span>Patient Card</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setIsConsentModalOpen(true)}
-                            className={`px-3 py-2 border rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${consentStatus === 'signed'
-                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                                    : consentStatus === 'pending'
-                                        ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
-                                        : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                                }`}
-                        >
-                            {consentStatus === 'signed' ? (
-                                <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                            ) : (
-                                <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
-                            )}
-                            <span>Consent: {consentStatus.replace(/_/g, ' ')}</span>
-                        </button>
-
-                        {canEditClinical && (
-                            <button
-                                type="button"
-                                onClick={() => setIsEditPatientOpen(true)}
-                                className="px-3 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
-                            >
-                                <Edit className="w-3.5 h-3.5" aria-hidden="true" />
-                                <span>Edit Details</span>
-                            </button>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={() => setIsApptModalOpen(true)}
-                            className="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-                        >
-                            <Calendar className="w-3.5 h-3.5" aria-hidden="true" />
-                            <span>Book Appointment</span>
-                        </button>
-
-                        {canEditClinical && (
-                            <button
-                                type="button"
-                                onClick={() => setIsVisitModalOpen(true)}
-                                className="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
-                            >
-                                <Stethoscope className="w-3.5 h-3.5" aria-hidden="true" />
-                                <span>New Examination</span>
-                            </button>
-                        )}
-                    </div>
-                </div>
-
-                {/* Assignment Bar + Adjustable Pain Scale & Severity Triage */}
-                <div className="pt-4 border-t border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-                    {/* Assigned Clinicians (Reassignable by Doctor/Admin) */}
-                    <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                        <div>
-                            <label htmlFor={docReassignId} className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                                Attending Doctor
-                            </label>
-                            {isDoctorOrAdmin ? (
-                                <select
-                                    id={docReassignId}
-                                    disabled={isReassigning}
-                                    value={assignDoctorId}
-                                    onChange={(e) => {
-                                        const nextDoc = e.target.value;
-                                        setAssignDoctorId(nextDoc);
-                                        handleQuickReassign(nextDoc, assignStudentId);
-                                    }}
-                                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-semibold"
-                                >
-                                    <option value="">Unassigned / Pool</option>
-                                    {doctorsPool.map((d) => (
-                                        <option key={d.id} value={d.id}>
-                                            {d.full_name || d.doctor_name}
-                                        </option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <p className="text-xs font-bold text-slate-800">
-                                    {patient.doctor_name || 'Faculty Pool'}
-                                </p>
-                            )}
-                        </div>
-
-                        <div>
-                            <label htmlFor={stuReassignId} className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                                Assigned Student Trainee
-                            </label>
-                            {isDoctorOrAdmin ? (
-                                <select
-                                    id={stuReassignId}
-                                    disabled={isReassigning}
-                                    value={assignStudentId}
-                                    onChange={(e) => {
-                                        const nextStu = e.target.value;
-                                        setAssignStudentId(nextStu);
-                                        handleQuickReassign(assignDoctorId, nextStu);
-                                    }}
-                                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-semibold"
-                                >
-                                    <option value="">None (Doctor Handles)</option>
-                                    {studentsPool.map((s) => (
-                                        <option key={s.id} value={s.id}>
-                                            {s.full_name || s.student_name}
-                                        </option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <p className="text-xs font-bold text-slate-800">
-                                    {patient.student_name || user?.full_name || 'Assigned'}
-                                </p>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Interactive Pain Scale (0-10) & Severity Level */}
-                    <div className="lg:col-span-7 p-3 bg-teal-50/50 rounded-xl border border-teal-200 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                        <div className="sm:col-span-5">
-                            <label htmlFor={painSliderId} className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1">
-                                <span>Pain Scale (0–10)</span>
-                                <span className={`px-1.5 py-0.5 rounded font-mono border ${getPainColorClass(painScaleEdit)}`}>
-                                    {painScaleEdit}/10
-                                </span>
-                            </label>
-                            <input
-                                id={painSliderId}
-                                type="range"
-                                min={0}
-                                max={10}
-                                step={1}
-                                disabled={!canEditClinical}
-                                value={painScaleEdit}
-                                style={{ '--progress': `${painScaleEdit * 10}%` } as React.CSSProperties}
-                                onChange={(e) => setPainScaleEdit(Number(e.target.value))}
-                                className="w-full cursor-pointer"
-                            />
-                        </div>
-
-                        <div className="sm:col-span-4">
-                            <label htmlFor={sevSelectId} className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Severity Triage
-                            </label>
-                            <select
-                                id={sevSelectId}
-                                disabled={!canEditClinical}
-                                value={severityEdit}
-                                onChange={(e) => setSeverityEdit(e.target.value as SeverityLevel)}
-                                className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-semibold"
-                            >
-                                <option value="none">None / Routine</option>
-                                <option value="mild">Mild</option>
-                                <option value="moderate">Moderate</option>
-                                <option value="severe">Severe</option>
-                                <option value="critical">Critical</option>
-                            </select>
-                        </div>
-
-                        <div className="sm:col-span-3 flex justify-end sm:pt-4">
-                            {canEditClinical ? (
-                                <button
-                                    type="button"
-                                    disabled={isSavingTriage}
-                                    onClick={handleSaveTriage}
-                                    className="w-full px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold disabled:opacity-50"
-                                >
-                                    {isSavingTriage ? 'Saving...' : 'Save Triage'}
-                                </button>
-                            ) : (
-                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold border ${SEVERITY_META[severityEdit]?.badgeClass}`}>
-                                    {SEVERITY_META[severityEdit]?.label}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* Medical Allergy Alert Banner */}
+            <section aria-label="Patient Priority Demographics" className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+                {/* Allergy Safety Ribbon (Top-most for instant clinician visibility) */}
                 {patient.medical_history?.allergies &&
                     patient.medical_history.allergies.toLowerCase() !== 'none' && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs font-bold text-red-700">
+                        <div className="px-5 py-2.5 bg-rose-600 text-white flex items-center gap-2 text-xs font-bold tracking-wide">
                             <AlertTriangle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
                             <span>MEDICAL ALERT — ALLERGIES: {patient.medical_history.allergies}</span>
                         </div>
                     )}
+
+                <div className="p-5 sm:p-6 space-y-5">
+                    {/* Row 1: Identity & Primary Clinical Actions (never crushes name) */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                            <button
+                                type="button"
+                                onClick={() => navigate('/patients')}
+                                aria-label="Back to patients directory"
+                                className="p-2.5 border border-slate-200 hover:bg-slate-100 rounded-xl text-slate-600 transition-colors flex-shrink-0"
+                            >
+                                <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+                            </button>
+
+                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-teal-500/15 to-emerald-500/10 border border-teal-500/25 text-teal-800 flex items-center justify-center font-extrabold text-xl flex-shrink-0">
+                                {initials || 'PT'}
+                            </div>
+
+                            <div className="min-w-0 space-y-1.5">
+                                <div className="flex flex-wrap items-center gap-2.5">
+                                    <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight whitespace-nowrap">
+                                        {displayName}
+                                    </h1>
+                                    <span className="font-mono text-xs font-extrabold text-teal-800 bg-teal-50 border border-teal-300 px-2.5 py-0.5 rounded-md whitespace-nowrap">
+                                        CR: {patient.cr_number || patient.patient_code}
+                                    </span>
+                                    <span className="font-mono text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">
+                                        {patient.patient_code}
+                                    </span>
+                                    {patient.special_case_flag && (
+                                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap">
+                                            Special Case
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="font-semibold px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 whitespace-nowrap">
+                                        {patient.age ? `${patient.age} yrs` : ''} • {patient.gender}
+                                    </span>
+                                    <span className="font-semibold px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1 whitespace-nowrap">
+                                        <Languages className="w-3 h-3" aria-hidden="true" />
+                                        {LANGUAGE_LABELS[patient.preferred_language || 'en']}
+                                    </span>
+                                    {patient.blood_group && (
+                                        <span className="px-2 py-0.5 bg-rose-50 text-rose-700 font-bold rounded-md border border-rose-200 whitespace-nowrap">
+                                            Blood: {patient.blood_group}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Primary Clinical Actions */}
+                        <div className="flex flex-wrap items-center gap-2.5 flex-shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setIsApptModalOpen(true)}
+                                className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 transition shadow-sm whitespace-nowrap"
+                            >
+                                <Calendar className="w-4 h-4" aria-hidden="true" />
+                                <span>Book Appointment</span>
+                            </button>
+
+                            {canEditClinical && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsVisitModalOpen(true)}
+                                    className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 transition shadow-sm whitespace-nowrap"
+                                >
+                                    <Stethoscope className="w-4 h-4" aria-hidden="true" />
+                                    <span>New Examination</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Row 2: Contact Bar + Patient Documents/Profile Utilities */}
+                    <div className="pt-3.5 border-t border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600 font-medium">
+                            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                <Phone className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                                {patient.phone}
+                            </span>
+                            {patient.email && (
+                                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                    <Mail className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                                    {patient.email}
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                                DOB: {formatDateIN(patient.date_of_birth)}
+                            </span>
+                            {patient.address && (
+                                <span className="inline-flex items-center gap-1.5">
+                                    <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" aria-hidden="true" />
+                                    <span>{patient.address}</span>
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+                            {(patient.case_keywords || []).map((kw) => (
+                                <span
+                                    key={kw}
+                                    className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold whitespace-nowrap"
+                                >
+                                    #{kw}
+                                </span>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={() => setIsCardModalOpen(true)}
+                                className="px-3 py-1.5 border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition whitespace-nowrap"
+                            >
+                                <CreditCard className="w-3.5 h-3.5 text-teal-600" aria-hidden="true" />
+                                <span>Patient Card</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setIsConsentModalOpen(true)}
+                                className={`px-3 py-1.5 border rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition whitespace-nowrap ${consentStatus === 'signed'
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                        : consentStatus === 'pending'
+                                            ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                                            : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                                    }`}
+                            >
+                                {consentStatus === 'signed' ? (
+                                    <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                                ) : (
+                                    <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
+                                )}
+                                <span>Consent: {consentStatus.replace(/_/g, ' ')}</span>
+                            </button>
+
+                            {canEditClinical && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditPatientOpen(true)}
+                                    className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition whitespace-nowrap"
+                                >
+                                    <Edit className="w-3.5 h-3.5" aria-hidden="true" />
+                                    <span>Edit Details</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Row 3: Care Team Assignment & Live Pain / Severity Triage */}
+                    <div className="pt-4 border-t border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+                        {/* Assigned Clinicians */}
+                        <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-slate-50/90 rounded-xl border border-slate-200/80 items-end">
+                            <div>
+                                <label htmlFor={docReassignId} className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 whitespace-nowrap">
+                                    Attending Doctor
+                                </label>
+                                {isDoctorOrAdmin ? (
+                                    <select
+                                        id={docReassignId}
+                                        disabled={isReassigning}
+                                        value={assignDoctorId}
+                                        onChange={(e) => {
+                                            const nextDoc = e.target.value;
+                                            setAssignDoctorId(nextDoc);
+                                            handleQuickReassign(nextDoc, assignStudentId);
+                                        }}
+                                        className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
+                                    >
+                                        <option value="">Unassigned / Pool</option>
+                                        {doctorsPool.map((d) => (
+                                            <option key={d.id} value={d.id}>
+                                                {d.full_name || d.doctor_name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <p className="text-xs font-bold text-slate-800 py-1.5">
+                                        {patient.doctor_name || 'Faculty Pool'}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label htmlFor={stuReassignId} className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 whitespace-nowrap">
+                                    Trainee Student
+                                </label>
+                                {isDoctorOrAdmin ? (
+                                    <select
+                                        id={stuReassignId}
+                                        disabled={isReassigning}
+                                        value={assignStudentId}
+                                        onChange={(e) => {
+                                            const nextStu = e.target.value;
+                                            setAssignStudentId(nextStu);
+                                            handleQuickReassign(assignDoctorId, nextStu);
+                                        }}
+                                        className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
+                                    >
+                                        <option value="">None (Doctor Handles)</option>
+                                        {studentsPool.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.full_name || s.student_name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <p className="text-xs font-bold text-slate-800 py-1.5">
+                                        {patient.student_name || user?.full_name || 'Assigned'}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Pain Scale & Severity Triage */}
+                        <div className="lg:col-span-7 p-3.5 bg-teal-50/40 rounded-xl border border-teal-200/80 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                            <div className="sm:col-span-5">
+                                <label htmlFor={painSliderId} className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-2">
+                                    <span>Pain Scale (0–10)</span>
+                                    <span className={`px-2 py-0.5 rounded font-mono border ${getPainColorClass(painScaleEdit)}`}>
+                                        {painScaleEdit}/10
+                                    </span>
+                                </label>
+                                <input
+                                    id={painSliderId}
+                                    type="range"
+                                    min={0}
+                                    max={10}
+                                    step={1}
+                                    disabled={!canEditClinical}
+                                    value={painScaleEdit}
+                                    style={{ '--progress': `${painScaleEdit * 10}%` } as React.CSSProperties}
+                                    onChange={(e) => setPainScaleEdit(Number(e.target.value))}
+                                    className="w-full cursor-pointer mb-1"
+                                />
+                            </div>
+
+                            <div className="sm:col-span-4">
+                                <label htmlFor={sevSelectId} className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                                    Severity Triage
+                                </label>
+                                <select
+                                    id={sevSelectId}
+                                    disabled={!canEditClinical}
+                                    value={severityEdit}
+                                    onChange={(e) => setSeverityEdit(e.target.value as SeverityLevel)}
+                                    className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
+                                >
+                                    <option value="none">None / Routine</option>
+                                    <option value="mild">Mild</option>
+                                    <option value="moderate">Moderate</option>
+                                    <option value="severe">Severe</option>
+                                    <option value="critical">Critical</option>
+                                </select>
+                            </div>
+
+                            <div className="sm:col-span-3">
+                                {canEditClinical ? (
+                                    <button
+                                        type="button"
+                                        disabled={isSavingTriage}
+                                        onClick={handleSaveTriage}
+                                        className="w-full px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold disabled:opacity-50 transition whitespace-nowrap"
+                                    >
+                                        {isSavingTriage ? 'Saving...' : 'Save Triage'}
+                                    </button>
+                                ) : (
+                                    <span className={`inline-block px-2.5 py-1.5 rounded-full text-[10px] font-bold border ${SEVERITY_META[severityEdit]?.badgeClass}`}>
+                                        {SEVERITY_META[severityEdit]?.label}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             {/* =================================================================== */}
@@ -928,7 +934,7 @@ export const PatientDetail: React.FC = () => {
                                     setUploadDefaultType('xray');
                                     setIsDocModalOpen(true);
                                 }}
-                                className="px-2.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg text-xs font-bold inline-flex items-center gap-1"
+                                className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap flex-shrink-0"
                             >
                                 <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                                 <span>Add X-Ray</span>
@@ -947,10 +953,10 @@ export const PatientDetail: React.FC = () => {
                                     key={category}
                                     className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2"
                                 >
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between gap-2">
                                         <span className="text-xs font-bold text-slate-900">{category}</span>
-                                        <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold">
-                                            {items.length} scans
+                                        <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-bold whitespace-nowrap flex-shrink-0">
+                                            {items.length} {items.length === 1 ? 'scan' : 'scans'}
                                         </span>
                                     </div>
 
@@ -1058,12 +1064,12 @@ export const PatientDetail: React.FC = () => {
             </div>
 
             {/* =================================================================== */}
-            {/* 3. SINGLE-ROW HORIZONTALLY SCROLLABLE EMR MODULE TABS */}
+            {/* 3. EMR MODULE TABS (Wrapped on Desktop, Scrollable on Mobile) */}
             {/* =================================================================== */}
             <div
                 role="tablist"
                 aria-label="Patient EMR sections"
-                className="tab-scroll-strip border-b border-slate-200 gap-1 text-xs font-semibold"
+                className="flex items-center gap-1.5 p-1.5 bg-slate-100/90 border border-slate-200/80 rounded-2xl overflow-x-auto lg:flex-wrap lg:overflow-visible text-xs font-semibold"
             >
                 {tabs.map((tab) => (
                     <button
@@ -1075,15 +1081,15 @@ export const PatientDetail: React.FC = () => {
                             setActiveTab(tab.id as any);
                             e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                         }}
-                        className={`py-3 px-4 rounded-t-xl transition-all whitespace-nowrap flex items-center gap-1.5 border-b-2 ${activeTab === tab.id
-                                ? 'bg-white border-teal-600 text-teal-800 font-bold shadow-sm'
-                                : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
+                        className={`py-2 px-3 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 ${activeTab === tab.id
+                                ? 'bg-white text-teal-800 font-bold shadow-sm border border-teal-200'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 border border-transparent'
                             }`}
                     >
                         <span>{tab.label}</span>
                         {tab.count !== undefined && (
                             <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeTab === tab.id ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-600'
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeTab === tab.id ? 'bg-teal-100 text-teal-800' : 'bg-slate-200/80 text-slate-600'
                                     }`}
                             >
                                 {tab.count}

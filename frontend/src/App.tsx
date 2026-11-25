@@ -104,7 +104,7 @@ export default function App() {
                             <Route
                                 path="attendance"
                                 element={
-                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'receptionist']}>
+                                    <ProtectedRoute allowedRoles={['admin', 'receptionist']}>
                                         <Attendance />
                                     </ProtectedRoute>
                                 }

@@ -1,4 +1,5 @@
 import React, { useId, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     GraduationCap,
@@ -15,21 +16,28 @@ import {
     AlertTriangle,
     Users,
     Building2,
+    Eye,
+    ArrowRight,
+    Activity,
+    Calendar,
 } from 'lucide-react';
 import { studentsApi } from '../api/students';
 import { doctorsApi } from '../api/doctors';
 import { useAuth } from '../context/AuthContext';
 import { Student } from '../types';
+import { formatDateIN, SEVERITY_META } from '../utils/formatters';
 import Modal from '../components/common/Modal';
 
 export default function Students() {
     const { user, hasRole } = useAuth();
+    const navigate = useNavigate();
     const queryClient = useQueryClient();
 
     const [search, setSearch] = useState('');
     const [revokeEmailInput, setRevokeEmailInput] = useState('');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+    const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
     const [revokingStudent, setRevokingStudent] = useState<Student | null>(null);
     const [confirmRevokeEmail, setConfirmRevokeEmail] = useState<string | null>(null);
     const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -72,6 +80,12 @@ export default function Students() {
         queryKey: ['doctorsListForStudentPool'],
         queryFn: () => doctorsApi.list(),
         enabled: isDoctorOrAdmin,
+    });
+
+    const { data: workspace, isLoading: isWorkspaceLoading } = useQuery({
+        queryKey: ['studentWorkspace', viewingStudent?.id],
+        queryFn: () => studentsApi.getWorkspace(viewingStudent!.id),
+        enabled: !!viewingStudent && isDoctorOrAdmin,
     });
 
     const createMutation = useMutation({
@@ -407,25 +421,36 @@ export default function Students() {
 
                                 {/* Action Buttons */}
                                 {isDoctorOrAdmin && (
-                                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+                                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => handleOpenEdit(stu)}
-                                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1.5 transition"
+                                            onClick={() => setViewingStudent(stu)}
+                                            className="px-3 py-1.5 text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg inline-flex items-center gap-1.5 transition"
                                         >
-                                            <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
-                                            <span>Edit</span>
+                                            <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                                            <span>View Patients &amp; Progress</span>
                                         </button>
-                                        {isActive && (
+
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <button
                                                 type="button"
-                                                onClick={() => setRevokingStudent(stu)}
-                                                className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition"
+                                                onClick={() => handleOpenEdit(stu)}
+                                                className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1.5 transition"
                                             >
-                                                <UserX className="w-3.5 h-3.5" aria-hidden="true" />
-                                                <span>Remove & Revoke Access</span>
+                                                <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
+                                                <span>Edit</span>
                                             </button>
-                                        )}
+                                            {isActive && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRevokingStudent(stu)}
+                                                    className="px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1.5 transition"
+                                                >
+                                                    <UserX className="w-3.5 h-3.5" aria-hidden="true" />
+                                                    <span>Revoke</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -716,6 +741,146 @@ export default function Students() {
                         </div>
                     </div>
                 )}
+            </Modal>
+
+            {/* Student Clinical View & Progress Modal (Doctor / Admin) */}
+            <Modal
+                isOpen={!!viewingStudent}
+                onClose={() => setViewingStudent(null)}
+                title={
+                    viewingStudent
+                        ? `${viewingStudent.full_name || viewingStudent.student_name} — Clinical Workspace`
+                        : 'Student Clinical Workspace'
+                }
+                subtitle="Assigned patients, treatment progress, and recent clinical activity"
+                icon={<GraduationCap className="w-4 h-4 text-teal-600" aria-hidden="true" />}
+                maxWidthClass="max-w-4xl"
+            >
+                <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+                    {isWorkspaceLoading || !workspace ? (
+                        <div className="py-12 text-center text-xs text-slate-500">
+                            Loading student clinical workspace and patient progress...
+                        </div>
+                    ) : (
+                        <>
+                            {/* KPI Summary Strip */}
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                                {[
+                                    { label: 'Assigned Patients', value: workspace.summary.assigned_patients, tone: 'bg-indigo-50 text-indigo-900 border-indigo-200' },
+                                    { label: 'Visits Recorded', value: workspace.summary.visits_recorded, tone: 'bg-teal-50 text-teal-900 border-teal-200' },
+                                    { label: 'Treatment Plans', value: workspace.summary.treatment_plans, tone: 'bg-sky-50 text-sky-900 border-sky-200' },
+                                    { label: 'Surgical Logs', value: workspace.summary.surgical_logs, tone: 'bg-amber-50 text-amber-900 border-amber-200' },
+                                    { label: 'Upcoming Appts', value: workspace.summary.upcoming_appointments, tone: 'bg-emerald-50 text-emerald-900 border-emerald-200' },
+                                ].map((kpi) => (
+                                    <div key={kpi.label} className={`p-3 rounded-xl border ${kpi.tone}`}>
+                                        <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">{kpi.label}</p>
+                                        <p className="text-xl font-extrabold mt-0.5">{kpi.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Assigned Patients & Progress */}
+                            <div className="space-y-3">
+                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-teal-600" aria-hidden="true" />
+                                    <span>Patients Assigned to Trainee ({workspace.patients.length})</span>
+                                </h3>
+
+                                {workspace.patients.length === 0 ? (
+                                    <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                                        No patients are currently assigned to this student.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2.5">
+                                        {workspace.patients.map((pat) => {
+                                            const sevMeta = SEVERITY_META[(pat.severity_level || 'none') as keyof typeof SEVERITY_META] || SEVERITY_META.none;
+                                            return (
+                                                <div
+                                                    key={pat.id}
+                                                    className="p-4 rounded-xl border border-slate-200 bg-white hover:border-teal-300 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                                                >
+                                                    <div className="space-y-1.5 min-w-0">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
+                                                                {pat.cr_number || pat.patient_code}
+                                                            </span>
+                                                            <span className="font-bold text-sm text-slate-900">{pat.full_name}</span>
+                                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${sevMeta.badgeClass}`}>
+                                                                {sevMeta.label} • Pain {pat.pain_scale}/10
+                                                            </span>
+                                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize bg-slate-100 text-slate-700">
+                                                                Stage: {pat.tracker_stage.replace(/_/g, ' ')}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                                                            <span>Visits: <strong>{pat.visits_count}</strong></span>
+                                                            <span>Plans: <strong>{pat.treatment_plans_count}</strong>{pat.latest_plan_status ? ` (${pat.latest_plan_status.replace(/_/g, ' ')})` : ''}</span>
+                                                            {pat.attending_doctor && <span>Doctor: <strong>{pat.attending_doctor}</strong></span>}
+                                                            {pat.next_appointment_date && (
+                                                                <span className="inline-flex items-center gap-1 text-teal-700 font-semibold">
+                                                                    <Calendar className="w-3 h-3" aria-hidden="true" />
+                                                                    Next: {formatDateIN(pat.next_appointment_date)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {pat.last_visit_diagnosis && (
+                                                            <p className="text-xs text-slate-500">
+                                                                Latest Finding ({pat.last_visit_date ? formatDateIN(pat.last_visit_date) : 'Recent'}): {pat.last_visit_diagnosis}
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setViewingStudent(null);
+                                                            navigate(`/patients/${pat.id}`);
+                                                        }}
+                                                        className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 whitespace-nowrap self-start sm:self-center flex-shrink-0"
+                                                    >
+                                                        <span>Open EMR</span>
+                                                        <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Recent Activity */}
+                            <div className="space-y-3">
+                                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-teal-600" aria-hidden="true" />
+                                    <span>Recent Clinical Activity</span>
+                                </h3>
+                                {workspace.recent_activity.length === 0 ? (
+                                    <p className="text-xs text-slate-400 italic">No clinical records logged yet.</p>
+                                ) : (
+                                    <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white">
+                                        {workspace.recent_activity.map((act) => (
+                                            <div key={act.id} className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold uppercase text-[10px]">
+                                                        {act.record_type.replace(/_/g, ' ')}
+                                                    </span>
+                                                    <span className="font-semibold text-slate-900 truncate">{act.title}</span>
+                                                    <span className="text-slate-500">• {act.patient_name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-500 font-mono text-[11px]">
+                                                    {act.status && <span className="capitalize font-sans font-semibold text-teal-700">{act.status.replace(/_/g, ' ')}</span>}
+                                                    <span>{act.record_date ? formatDateIN(act.record_date) : ''}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
             </Modal>
         </div>
     );
