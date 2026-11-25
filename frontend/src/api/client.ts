@@ -1,13 +1,30 @@
 const BASE_URL = '/api/v1';
 
-let currentAccessToken: string | null = localStorage.getItem('access_token');
+const getSafeLocalStorage = (): Storage | null => {
+  try {
+    if (
+      typeof window !== 'undefined' &&
+      window.localStorage &&
+      typeof window.localStorage.getItem === 'function'
+    ) {
+      return window.localStorage;
+    }
+  } catch {
+    // Storage unavailable in restricted test/sandbox context
+  }
+  return null;
+};
+
+let currentAccessToken: string | null = getSafeLocalStorage()?.getItem('access_token') ?? null;
 
 export const setAccessToken = (token: string | null) => {
   currentAccessToken = token;
+  const storage = getSafeLocalStorage();
+  if (!storage) return;
   if (token) {
-    localStorage.setItem('access_token', token);
+    storage.setItem('access_token', token);
   } else {
-    localStorage.removeItem('access_token');
+    storage.removeItem('access_token');
   }
 };
 
@@ -73,21 +90,28 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         errorCode = errorJson.error.code || errorCode;
         errorMessage = errorJson.error.message || errorMessage;
         errorDetails = errorJson.error.details || null;
+      } else if (errorJson.detail) {
+        if (typeof errorJson.detail === 'string') {
+          errorMessage = errorJson.detail;
+        } else if (errorJson.detail.message) {
+          errorCode = errorJson.detail.code || errorCode;
+          errorMessage = errorJson.detail.message;
+        }
       }
     } catch {
       // Non-JSON response
     }
 
     if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh')) {
-      // Trigger logout / token clear if expired
       setAccessToken(null);
-      window.dispatchEvent(new CustomEvent('auth:expired'));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }
     }
 
     throw new ApiError(response.status, errorCode, errorMessage, errorDetails);
   }
 
-  // Handle empty 204 or void response
   if (response.status === 204) {
     return {} as T;
   }
@@ -96,7 +120,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
 }
 
 export const api = {
-  get: <T>(endpoint: string, params?: Record<string, any>) => 
+  get: <T>(endpoint: string, params?: Record<string, any>) =>
     request<T>(endpoint, { method: 'GET', params }),
 
   post: <T>(endpoint: string, body?: any, params?: Record<string, any>) =>
@@ -135,8 +159,8 @@ export const api = {
       const err = await response.json().catch(() => ({}));
       throw new ApiError(
         response.status,
-        err.error?.code || 'UPLOAD_FAILED',
-        err.error?.message || 'File upload failed'
+        err.error?.code || err.detail?.code || 'UPLOAD_FAILED',
+        err.error?.message || err.detail?.message || err.detail || 'File upload failed'
       );
     }
     return response.json();
@@ -155,5 +179,5 @@ export const api = {
       throw new ApiError(response.status, 'DOWNLOAD_FAILED', 'Failed to download file');
     }
     return response.blob();
-  }
+  },
 };

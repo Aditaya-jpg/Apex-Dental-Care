@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { X, UserPlus, HeartPulse, Stethoscope, FileText, CheckSquare, Upload, CreditCard } from 'lucide-react';
-import { Patient, Student } from '../../types';
+import React, { useState, useEffect, useId } from 'react';
+import {
+  UserPlus,
+  Plus,
+  X,
+  ShieldAlert,
+  CheckCircle2,
+} from 'lucide-react';
+import { Doctor, LanguageCode, Patient, Student } from '../../types';
 import { studentsApi } from '../../api/students';
+import { doctorsApi } from '../../api/doctors';
 import { patientsApi } from '../../api/patients';
 import { useAuth } from '../../context/AuthContext';
+import Modal from '../common/Modal';
 
 interface PatientFormModalProps {
   isOpen: boolean;
@@ -12,7 +20,7 @@ interface PatientFormModalProps {
   initialData?: Patient | null;
 }
 
-const DISEASE_OPTIONS = [
+export const DISEASE_OPTIONS = [
   'Dental Caries',
   'Gingivitis',
   'Periodontitis',
@@ -23,7 +31,17 @@ const DISEASE_OPTIONS = [
   'Tooth Sensitivity',
   'Missing Teeth',
   'Oral Lesions',
+  'Impacted Tooth',
   'Other',
+];
+
+const PRESET_KEYWORDS = [
+  'Pediatric (<18)',
+  'Geriatric (60+)',
+  'Special Case',
+  'Medically Compromised',
+  'Pregnant',
+  'Emergency',
 ];
 
 export const PatientFormModal: React.FC<PatientFormModalProps> = ({
@@ -32,84 +50,220 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
   onSubmit,
   initialData,
 }) => {
-  const { user } = useAuth();
-  const [firstName, setFirstName] = useState(initialData?.first_name || '');
-  const [lastName, setLastName] = useState(initialData?.last_name || '');
+  const { user, hasRole } = useAuth();
+  const isDoctorOrAdmin = hasRole('admin', 'doctor', 'dentist');
+
+  const splitNames = (pat?: Patient | null) => {
+    if (!pat) return { first: '', last: '' };
+    if (pat.first_name || pat.last_name) {
+      return { first: pat.first_name || '', last: pat.last_name || '' };
+    }
+    const parts = (pat.full_name || pat.patient_name || '').trim().split(/\s+/);
+    return {
+      first: parts[0] || '',
+      last: parts.slice(1).join(' ') || '',
+    };
+  };
+
+  const initialNames = splitNames(initialData);
+
+  const [firstName, setFirstName] = useState(initialNames.first);
+  const [lastName, setLastName] = useState(initialNames.last);
   const [dob, setDob] = useState(initialData?.date_of_birth || '1995-01-01');
   const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>(initialData?.gender || 'Male');
   const [phone, setPhone] = useState(initialData?.phone || '');
   const [email, setEmail] = useState(initialData?.email || '');
   const [address, setAddress] = useState(initialData?.address || '');
-  const [emergencyContactName, setEmergencyContactName] = useState(initialData?.emergency_contact_name || '');
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState(initialData?.emergency_contact_phone || '');
+  const [emergencyContactName, setEmergencyContactName] = useState(
+    initialData?.emergency_contact_name || initialData?.emergency_contact || ''
+  );
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState(
+    initialData?.emergency_contact_phone || ''
+  );
   const [bloodGroup, setBloodGroup] = useState(initialData?.blood_group || 'O+');
+  const [preferredLanguage, setPreferredLanguage] = useState<LanguageCode>(
+    initialData?.preferred_language || 'en'
+  );
 
-  // Hierarchy & Identification Fields
+  // Clinical, CR, Assignment & Keywords
   const [crNumber, setCrNumber] = useState(initialData?.cr_number || '');
+  const [doctorId, setDoctorId] = useState<number | ''>(initialData?.doctor_id || '');
   const [studentId, setStudentId] = useState<number | ''>(initialData?.student_id || '');
-  const [diseaseCategories, setDiseaseCategories] = useState<string[]>(initialData?.disease_categories || []);
+  const [diseaseCategories, setDiseaseCategories] = useState<string[]>(
+    initialData?.disease_categories || []
+  );
+  const [specialCaseFlag, setSpecialCaseFlag] = useState<boolean>(
+    Boolean(initialData?.special_case_flag)
+  );
+  const [caseKeywords, setCaseKeywords] = useState<string[]>(initialData?.case_keywords || []);
+  const [customKeyword, setCustomKeyword] = useState('');
   const [cardFile, setCardFile] = useState<File | null>(null);
 
-  // Student list for assignment (if Doctor/Admin)
+  // Parent / Guardian Consent
+  const [parentConsentRequired, setParentConsentRequired] = useState<boolean>(
+    Boolean(initialData?.parent_consent_required)
+  );
+  const [parentGuardianName, setParentGuardianName] = useState(
+    initialData?.parent_guardian_name || ''
+  );
+  const [parentGuardianPhone, setParentGuardianPhone] = useState(
+    initialData?.parent_guardian_phone || ''
+  );
+  const [parentConsentStatus, setParentConsentStatus] = useState<
+    'not_required' | 'pending' | 'signed'
+  >(initialData?.parent_consent_status || 'not_required');
+  const [consentFile, setConsentFile] = useState<File | null>(null);
+
+  // Staff pools
   const [availableStudents, setAvailableStudents] = useState<Student[]>([]);
+  const [availableDoctors, setAvailableDoctors] = useState<Doctor[]>([]);
 
   // Medical History
   const [allergies, setAllergies] = useState(initialData?.medical_history?.allergies || '');
-  const [medicalConditions, setMedicalConditions] = useState(initialData?.medical_history?.medical_conditions || '');
-  const [currentMedications, setCurrentMedications] = useState(initialData?.medical_history?.current_medications || '');
-  const [bleedingDisorders, setBleedingDisorders] = useState(initialData?.medical_history?.bleeding_disorders || false);
+  const [medicalConditions, setMedicalConditions] = useState(
+    initialData?.medical_history?.medical_conditions || ''
+  );
+  const [currentMedications, setCurrentMedications] = useState(
+    initialData?.medical_history?.current_medications || ''
+  );
+  const [bleedingDisorders, setBleedingDisorders] = useState(
+    initialData?.medical_history?.bleeding_disorders || false
+  );
 
   // Dental History
-  const [chiefComplaint, setChiefComplaint] = useState(initialData?.dental_history?.chief_complaint || '');
-  const [brushingFrequency, setBrushingFrequency] = useState(initialData?.dental_history?.brushing_frequency || 'Twice daily');
+  const [chiefComplaint, setChiefComplaint] = useState(
+    initialData?.dental_history?.chief_complaint || ''
+  );
+  const [brushingFrequency, setBrushingFrequency] = useState(
+    initialData?.dental_history?.brushing_frequency || 'Twice daily'
+  );
 
-  const [activeTab, setActiveTab] = useState<'demographics' | 'medical' | 'dental' | 'clinical'>('demographics');
+  const [activeTab, setActiveTab] = useState<
+    'demographics' | 'clinical' | 'consent' | 'medical' | 'dental'
+  >('demographics');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load available students if logged-in user is doctor or admin
+  const firstNameId = useId();
+  const lastNameId = useId();
+  const dobId = useId();
+  const genderId = useId();
+  const bloodId = useId();
+  const langId = useId();
+  const phoneId = useId();
+  const emailId = useId();
+  const addressId = useId();
+  const emerNameId = useId();
+  const emerPhoneId = useId();
+  const crId = useId();
+  const docAssignId = useId();
+  const stuAssignId = useId();
+  const specialCaseId = useId();
+  const customKwId = useId();
+  const cardUploadId = useId();
+  const consentReqId = useId();
+  const guardianNameId = useId();
+  const guardianPhoneId = useId();
+  const consentStatusId = useId();
+  const consentFileId = useId();
+  const allergyId = useId();
+  const medCondId = useId();
+  const currMedId = useId();
+  const bleedId = useId();
+  const chiefId = useId();
+  const brushId = useId();
+
   useEffect(() => {
-    if (user?.role === 'admin' || user?.role === 'doctor' || user?.role === 'dentist') {
-      studentsApi.list()
+    if (!isOpen) return;
+    doctorsApi
+      .list()
+      .then((res) => setAvailableDoctors(res || []))
+      .catch(() => setAvailableDoctors([]));
+    if (isDoctorOrAdmin) {
+      studentsApi
+        .list()
         .then((res) => setAvailableStudents(res || []))
         .catch(() => setAvailableStudents([]));
     }
-  }, [user]);
+  }, [isOpen, isDoctorOrAdmin]);
+
+  // Calculate age from DOB
+  const computedAge = (() => {
+    const birth = new Date(dob);
+    if (isNaN(birth.getTime())) return 25;
+    return Math.floor((Date.now() - birth.getTime()) / (365.25 * 24 * 3600 * 1000));
+  })();
+  const isMinorOrSpecial = computedAge < 18 || specialCaseFlag;
+
+  useEffect(() => {
+    if (isMinorOrSpecial && !parentConsentRequired && !initialData) {
+      setParentConsentRequired(true);
+      if (parentConsentStatus === 'not_required') {
+        setParentConsentStatus('pending');
+      }
+    }
+  }, [isMinorOrSpecial]);
 
   if (!isOpen) return null;
 
   const toggleDisease = (disease: string) => {
-    if (diseaseCategories.includes(disease)) {
-      setDiseaseCategories(diseaseCategories.filter((d) => d !== disease));
-    } else {
-      setDiseaseCategories([...diseaseCategories, disease]);
+    setDiseaseCategories((prev) =>
+      prev.includes(disease) ? prev.filter((d) => d !== disease) : [...prev, disease]
+    );
+  };
+
+  const toggleKeyword = (kw: string) => {
+    setCaseKeywords((prev) =>
+      prev.includes(kw) ? prev.filter((k) => k !== kw) : [...prev, kw]
+    );
+  };
+
+  const handleAddCustomKeyword = () => {
+    const cleaned = customKeyword.trim();
+    if (!cleaned) return;
+    if (!caseKeywords.includes(cleaned)) {
+      setCaseKeywords((prev) => [...prev, cleaned]);
     }
+    setCustomKeyword('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName || !lastName || !phone || !dob) {
-      setError('Please fill in all mandatory demographic fields.');
+    if (!firstName.trim() || !phone.trim() || !dob) {
+      setError('Please fill in mandatory demographic fields (First Name, Phone, DOB).');
+      setActiveTab('demographics');
       return;
     }
 
     setIsSubmitting(true);
     setError(null);
     try {
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
       const payload: any = {
-        first_name: firstName,
-        last_name: lastName,
+        first_name: firstName.trim(),
+        last_name: lastName.trim() || '-',
+        full_name: fullName,
         date_of_birth: dob,
+        age: computedAge,
         gender,
-        phone,
-        email: email || undefined,
-        address: address || undefined,
-        emergency_contact_name: emergencyContactName || undefined,
-        emergency_contact_phone: emergencyContactPhone || undefined,
+        phone: phone.trim(),
+        email: email.trim() || undefined,
+        address: address.trim() || undefined,
+        emergency_contact: emergencyContactName.trim() || undefined,
+        emergency_contact_name: emergencyContactName.trim() || undefined,
+        emergency_contact_phone: emergencyContactPhone.trim() || undefined,
         blood_group: bloodGroup || undefined,
+        preferred_language: preferredLanguage,
         cr_number: crNumber.trim() || undefined,
         disease_categories: diseaseCategories,
-        student_id: studentId ? Number(studentId) : null,
+        case_keywords: caseKeywords,
+        special_case_flag: specialCaseFlag,
+        doctor_id: doctorId ? Number(doctorId) : null,
+        student_id: isDoctorOrAdmin ? (studentId ? Number(studentId) : null) : user?.student_id || undefined,
+        parent_consent_required: parentConsentRequired,
+        parent_guardian_name: parentGuardianName.trim() || undefined,
+        parent_guardian_phone: parentGuardianPhone.trim() || undefined,
+        parent_consent_status: parentConsentRequired ? parentConsentStatus : 'not_required',
         medical_history: {
           allergies: allergies || undefined,
           medical_conditions: medicalConditions || undefined,
@@ -123,431 +277,709 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
       };
 
       const result = await onSubmit(payload);
-
-      // If user selected a patient card file, upload it
       const savedPatientId = result?.id || initialData?.id;
+
       if (cardFile && savedPatientId) {
-        const formData = new FormData();
-        formData.append('card_file', cardFile);
-        if (crNumber) formData.append('cr_number', crNumber);
-        await patientsApi.uploadCard(savedPatientId, formData);
+        const cardFd = new FormData();
+        cardFd.append('file', cardFile);
+        if (crNumber.trim()) cardFd.append('cr_number', crNumber.trim());
+        await patientsApi.uploadCard(savedPatientId, cardFd);
+      }
+
+      if (consentFile && savedPatientId) {
+        const consentFd = new FormData();
+        consentFd.append('file', consentFile);
+        consentFd.append('parent_guardian_name', parentGuardianName.trim());
+        consentFd.append('parent_guardian_phone', parentGuardianPhone.trim());
+        consentFd.append('parent_consent_status', parentConsentStatus === 'not_required' ? 'signed' : parentConsentStatus);
+        await patientsApi.uploadConsent(savedPatientId, consentFd);
       }
 
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to save patient');
+      setError(err.message || 'Failed to save patient record');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const tabs: { id: typeof activeTab; label: string }[] = [
+    { id: 'demographics', label: '1. Demographics & Language' },
+    { id: 'clinical', label: '2. Categories, CR & Assignment' },
+    { id: 'consent', label: isMinorOrSpecial ? '3. Parent Consent (!)' : '3. Parent Consent' },
+    { id: 'medical', label: '4. Medical History' },
+    { id: 'dental', label: '5. Dental History' },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold">
-              <UserPlus className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-800">
-                {initialData ? 'Edit Patient Record' : 'Register New Patient'}
-              </h2>
-              <p className="text-xs text-slate-500">Demographic, Disease Categories & Clinical Assignment</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg">
-            <X className="w-5 h-5" />
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={initialData ? 'Edit PGI Patient Record' : 'Register New PGI Patient'}
+      subtitle="Demographics, Disease Categories, Keywords, Parent Consent & Card Upload"
+      icon={<UserPlus className="w-4 h-4" aria-hidden="true" />}
+      maxWidthClass="max-w-3xl"
+    >
+      {/* Single-row scrollable tabs */}
+      <div
+        role="tablist"
+        aria-label="Patient registration sections"
+        className="tab-scroll-strip border-b border-slate-200 px-4 sm:px-6 bg-slate-50/70 text-xs font-semibold flex-shrink-0"
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`py-3 px-3.5 border-b-2 transition-colors whitespace-nowrap ${
+              activeTab === tab.id
+                ? 'border-teal-600 text-teal-700 font-bold bg-white'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {tab.label}
           </button>
-        </div>
+        ))}
+      </div>
 
-        {/* Tab Selection */}
-        <div className="flex border-b border-slate-200 px-6 bg-slate-50/40 text-xs font-semibold overflow-x-auto">
-          {[
-            { id: 'demographics', label: '1. Demographics & Contact' },
-            { id: 'clinical', label: '2. Clinical & Disease Categories' },
-            { id: 'medical', label: '3. Medical History' },
-            { id: 'dental', label: '4. Dental History' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`py-3 px-3 border-b-2 font-medium whitespace-nowrap transition-colors ${
-                activeTab === tab.id
-                  ? 'border-teal-600 text-teal-700 font-bold bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+      {/* Form Body */}
+      <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+        {error && (
+          <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+            {error}
+          </div>
+        )}
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
-              {error}
-            </div>
-          )}
-
-          {/* 1. Demographics */}
-          {activeTab === 'demographics' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">First Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="e.g. Rahul"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Last Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="e.g. Sharma"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Date of Birth *</label>
-                  <input
-                    type="date"
-                    required
-                    value={dob}
-                    onChange={(e) => setDob(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Gender *</label>
-                  <select
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as any)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Blood Group</label>
-                  <select
-                    value={bloodGroup}
-                    onChange={(e) => setBloodGroup(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white"
-                  >
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
-                  <input
-                    type="tel"
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="+91 98765 43210"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="patient@example.com"
-                  />
-                </div>
-              </div>
-
+        {/* 1. Demographics */}
+        {activeTab === 'demographics' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Residential Address</label>
+                <label htmlFor={firstNameId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  First Name *
+                </label>
                 <input
+                  id={firstNameId}
                   type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  placeholder="Flat/House No., Street, City, PIN Code"
+                  required
+                  autoFocus
+                  autoComplete="given-name"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  placeholder="e.g. Aarav"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Emergency Contact Name</label>
-                  <input
-                    type="text"
-                    value={emergencyContactName}
-                    onChange={(e) => setEmergencyContactName(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="e.g. Priya Sharma"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Emergency Contact Phone</label>
-                  <input
-                    type="tel"
-                    value={emergencyContactPhone}
-                    onChange={(e) => setEmergencyContactPhone(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                    placeholder="+91 98765 43211"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 2. Clinical & Disease Categories */}
-          {activeTab === 'clinical' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    CR Number (Case Registration Number)
-                  </label>
-                  <input
-                    type="text"
-                    value={crNumber}
-                    onChange={(e) => setCrNumber(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none font-mono"
-                    placeholder="e.g. CR-2026-0042 (Leave blank to auto-generate)"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Unique clinic registration identifier</p>
-                </div>
-
-                {/* Student Assignment (Only for Doctor/Admin) */}
-                {(user?.role === 'admin' || user?.role === 'doctor' || user?.role === 'dentist') && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Assign to Student
-                    </label>
-                    <select
-                      value={studentId}
-                      onChange={(e) => setStudentId(e.target.value ? Number(e.target.value) : '')}
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white"
-                    >
-                      <option value="">None (Doctor Handles Directly)</option>
-                      {availableStudents.map((st) => (
-                        <option key={st.id} value={st.id}>
-                          {st.student_name} ({st.enrollment_number || st.email})
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-slate-400 mt-1">Delegates patient examination to student</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Disease Categories Checkboxes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-2">
-                  Disease Categories (Select all that apply)
+                <label htmlFor={lastNameId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Last Name
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  {DISEASE_OPTIONS.map((disease) => {
-                    const isChecked = diseaseCategories.includes(disease);
-                    return (
-                      <label
-                        key={disease}
-                        className={`flex items-center gap-2 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
-                          isChecked ? 'bg-teal-50 border border-teal-200 text-teal-900 font-semibold' : 'hover:bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleDisease(disease)}
-                          className="w-3.5 h-3.5 text-teal-600 rounded border-slate-300 focus:ring-teal-500"
-                        />
-                        <span>{disease}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Patient Card Upload */}
-              <div className="pt-2 border-t border-slate-100">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Upload Patient Identity / Registration Card
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => setCardFile(e.target.files?.[0] || null)}
-                    className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 cursor-pointer"
-                  />
-                  {cardFile && (
-                    <span className="text-xs text-slate-600 font-medium truncate">
-                      {cardFile.name} ({(cardFile.size / 1024).toFixed(1)} KB)
-                    </span>
-                  )}
-                </div>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Accepted formats: PDF, JPG, JPEG, PNG (Max 15MB). Securely stored and previewable in patient profile.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* 3. Medical History */}
-          {activeTab === 'medical' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Known Drug Allergies</label>
                 <input
+                  id={lastNameId}
                   type="text"
-                  value={allergies}
-                  onChange={(e) => setAllergies(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  placeholder="e.g. Penicillin, Sulfa drugs, Latex (or None)"
+                  autoComplete="family-name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                  placeholder="e.g. Sharma"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Systemic Medical Conditions</label>
-                <textarea
-                  value={medicalConditions}
-                  onChange={(e) => setMedicalConditions(e.target.value)}
-                  rows={2}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  placeholder="e.g. Hypertension, Diabetes, Asthma, Heart disease..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Current Medications</label>
-                <textarea
-                  value={currentMedications}
-                  onChange={(e) => setCurrentMedications(e.target.value)}
-                  rows={2}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  placeholder="List prescription and over-the-counter medications..."
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="bleedingDisorders"
-                  checked={bleedingDisorders}
-                  onChange={(e) => setBleedingDisorders(e.target.checked)}
-                  className="w-4 h-4 text-teal-600 rounded border-slate-300 focus:ring-teal-500"
-                />
-                <label htmlFor="bleedingDisorders" className="text-xs font-semibold text-slate-700">
-                  Patient reports bleeding disorders or is on anticoagulant therapy (Warfarin/Aspirin)
-                </label>
               </div>
             </div>
-          )}
 
-          {/* 4. Dental History */}
-          {activeTab === 'dental' && (
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Chief Dental Complaint *</label>
-                <textarea
-                  value={chiefComplaint}
-                  onChange={(e) => setChiefComplaint(e.target.value)}
-                  rows={3}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  placeholder="e.g. Toothache on chewing, routine cleaning, broken tooth..."
+                <label htmlFor={dobId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Date of Birth * ({computedAge} yrs)
+                </label>
+                <input
+                  id={dobId}
+                  type="date"
+                  required
+                  value={dob}
+                  onChange={(e) => setDob(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500"
                 />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Daily Brushing Frequency</label>
+                <label htmlFor={genderId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Gender *
+                </label>
                 <select
-                  value={brushingFrequency}
-                  onChange={(e) => setBrushingFrequency(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white"
+                  id={genderId}
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as any)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
                 >
-                  <option value="Once daily">Once daily</option>
-                  <option value="Twice daily">Twice daily</option>
-                  <option value="Three times daily">Three times daily</option>
-                  <option value="Irregular">Irregular</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor={bloodId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Blood Group
+                </label>
+                <select
+                  id={bloodId}
+                  value={bloodGroup}
+                  onChange={(e) => setBloodGroup(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                >
+                  {['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map((bg) => (
+                    <option key={bg} value={bg}>
+                      {bg}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor={langId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Preferred Language
+                </label>
+                <select
+                  id={langId}
+                  value={preferredLanguage}
+                  onChange={(e) => setPreferredLanguage(e.target.value as LanguageCode)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                >
+                  <option value="en">English (EN)</option>
+                  <option value="hi">हिंदी (Hindi)</option>
+                  <option value="pa">ਪੰਜਾਬੀ (Punjabi)</option>
                 </select>
               </div>
             </div>
-          )}
 
-          {/* Footer Controls */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50"
-            >
-              Cancel
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor={phoneId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Phone Number *
+                </label>
+                <input
+                  id={phoneId}
+                  type="tel"
+                  required
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                  placeholder="+91 98765 43210"
+                />
+              </div>
+              <div>
+                <label htmlFor={emailId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Email Address
+                </label>
+                <input
+                  id={emailId}
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                  placeholder="patient@pgi.edu.in"
+                />
+              </div>
+            </div>
 
-            <div className="flex gap-2">
-              {activeTab === 'demographics' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('clinical')}
-                  className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900"
-                >
-                  Next: Clinical →
-                </button>
-              )}
-              {activeTab === 'clinical' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('medical')}
-                  className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900"
-                >
-                  Next: Medical →
-                </button>
-              )}
-              {activeTab === 'medical' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('dental')}
-                  className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900"
-                >
-                  Next: Dental →
-                </button>
-              )}
+            <div>
+              <label htmlFor={addressId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Residential Address
+              </label>
+              <textarea
+                id={addressId}
+                rows={2}
+                autoComplete="street-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                placeholder="Sector, House No., Chandigarh / Punjab / Haryana"
+              />
+            </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
-              >
-                {isSubmitting ? 'Saving...' : initialData ? 'Update Patient' : 'Register Patient'}
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+              <div>
+                <label htmlFor={emerNameId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Emergency Contact Name
+                </label>
+                <input
+                  id={emerNameId}
+                  type="text"
+                  value={emergencyContactName}
+                  onChange={(e) => setEmergencyContactName(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                  placeholder="e.g. Priya Sharma"
+                />
+              </div>
+              <div>
+                <label htmlFor={emerPhoneId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Emergency Contact Phone
+                </label>
+                <input
+                  id={emerPhoneId}
+                  type="tel"
+                  value={emergencyContactPhone}
+                  onChange={(e) => setEmergencyContactPhone(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                  placeholder="+91 98765 43211"
+                />
+              </div>
             </div>
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+
+        {/* 2. Clinical, Disease Categories, Keywords & Card */}
+        {activeTab === 'clinical' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label htmlFor={crId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  CR Number (Case Reg #)
+                </label>
+                <input
+                  id={crId}
+                  type="text"
+                  value={crNumber}
+                  onChange={(e) => setCrNumber(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono"
+                  placeholder="CR-2026-0042 (Auto if blank)"
+                />
+              </div>
+
+              <div>
+                <label htmlFor={docAssignId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Attending Doctor (Optional)
+                </label>
+                <select
+                  id={docAssignId}
+                  value={doctorId}
+                  onChange={(e) => setDoctorId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                >
+                  <option value="">Unassigned / Branch Pool</option>
+                  {availableDoctors.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.full_name || d.doctor_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {isDoctorOrAdmin && (
+                <div>
+                  <label htmlFor={stuAssignId} className="block text-xs font-semibold text-slate-700 mb-1">
+                    Assign to Student (Optional)
+                  </label>
+                  <select
+                    id={stuAssignId}
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value ? Number(e.target.value) : '')}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    <option value="">None (Doctor Direct)</option>
+                    {availableStudents.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.full_name || st.student_name} ({st.roll_number || st.enrollment_number})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Disease Categories Checkboxes */}
+            <fieldset className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+              <legend className="text-xs font-bold text-slate-700 px-1">
+                Disease Categories (Multi-select)
+              </legend>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                {DISEASE_OPTIONS.map((disease) => {
+                  const isChecked = diseaseCategories.includes(disease);
+                  const cbId = `modal-disease-${disease.replace(/\s+/g, '-').toLowerCase()}`;
+                  return (
+                    <label
+                      key={disease}
+                      htmlFor={cbId}
+                      className={`flex items-center gap-2 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                        isChecked
+                          ? 'bg-teal-50 border border-teal-200 text-teal-900 font-semibold'
+                          : 'hover:bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      <input
+                        id={cbId}
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleDisease(disease)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
+                      />
+                      <span>{disease}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            {/* Special Case Flag & Case Keywords */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <label htmlFor={specialCaseId} className="inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input
+                    id={specialCaseId}
+                    type="checkbox"
+                    checked={specialCaseFlag}
+                    onChange={(e) => setSpecialCaseFlag(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-teal-600"
+                  />
+                  <span>Flag as Special Clinical Case (Medically Compromised / Special Needs)</span>
+                </label>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-semibold text-slate-600 mb-1.5">
+                  Case Keywords (Click presets or add custom tags):
+                </p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {PRESET_KEYWORDS.map((kw) => {
+                    const active = caseKeywords.includes(kw);
+                    return (
+                      <button
+                        key={kw}
+                        type="button"
+                        onClick={() => toggleKeyword(kw)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition ${
+                          active
+                            ? 'bg-teal-600 text-white border-teal-600'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        {active ? '✓ ' : '+ '}
+                        {kw}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-2">
+                  <label htmlFor={customKwId} className="visually-hidden">
+                    Add custom case keyword
+                  </label>
+                  <input
+                    id={customKwId}
+                    type="text"
+                    value={customKeyword}
+                    onChange={(e) => setCustomKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomKeyword();
+                      }
+                    }}
+                    placeholder="Add custom keyword (e.g. Diabetes, Hypertension, Orthognathic)..."
+                    className="flex-1 text-xs px-3 py-1.5 border border-slate-300 rounded-lg bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomKeyword}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                    Add
+                  </button>
+                </div>
+
+                {caseKeywords.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {caseKeywords.map((kw) => (
+                      <span
+                        key={kw}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-100 text-teal-900 text-[11px] font-semibold"
+                      >
+                        <span>{kw}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove keyword ${kw}`}
+                          onClick={() => toggleKeyword(kw)}
+                          className="hover:text-rose-700"
+                        >
+                          <X className="w-3 h-3" aria-hidden="true" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Patient Card Upload */}
+            <div className="pt-2 border-t border-slate-100">
+              <label htmlFor={cardUploadId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Upload Patient PGI Registration Card (`file`)
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  id={cardUploadId}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={(e) => setCardFile(e.target.files?.[0] || null)}
+                  className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 cursor-pointer"
+                />
+                {cardFile && (
+                  <span className="text-xs text-slate-600 font-medium truncate">
+                    {cardFile.name} ({(cardFile.size / 1024).toFixed(1)} KB)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 3. Parent / Guardian Consent */}
+        {activeTab === 'consent' && (
+          <div className="space-y-4">
+            {isMinorOrSpecial && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-900">
+                <ShieldAlert className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <p className="font-bold">
+                    Parent / Guardian Consent Recommended ({computedAge < 18 ? 'Minor < 18 yrs' : 'Special Clinical Case'})
+                  </p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Please capture guardian contact details and upload signed consent form for PGI clinical compliance.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5">
+              <input
+                id={consentReqId}
+                type="checkbox"
+                checked={parentConsentRequired}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setParentConsentRequired(checked);
+                  if (checked && parentConsentStatus === 'not_required') {
+                    setParentConsentStatus('pending');
+                  } else if (!checked) {
+                    setParentConsentStatus('not_required');
+                  }
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-teal-600"
+              />
+              <label htmlFor={consentReqId} className="text-xs font-bold text-slate-800 cursor-pointer">
+                Parent / Guardian Consent Required for Treatment
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor={guardianNameId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Parent / Guardian Full Name
+                </label>
+                <input
+                  id={guardianNameId}
+                  type="text"
+                  value={parentGuardianName}
+                  onChange={(e) => setParentGuardianName(e.target.value)}
+                  placeholder="e.g. Rajesh Sharma (Father)"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label htmlFor={guardianPhoneId} className="block text-xs font-semibold text-slate-700 mb-1">
+                  Parent / Guardian Phone
+                </label>
+                <input
+                  id={guardianPhoneId}
+                  type="tel"
+                  value={parentGuardianPhone}
+                  onChange={(e) => setParentGuardianPhone(e.target.value)}
+                  placeholder="+91 98765 00000"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor={consentStatusId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Consent Verification Status
+              </label>
+              <select
+                id={consentStatusId}
+                value={parentConsentStatus}
+                onChange={(e) => setParentConsentStatus(e.target.value as any)}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+              >
+                <option value="not_required">Not Required</option>
+                <option value="pending">Pending Signature</option>
+                <option value="signed">Signed & Verified</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor={consentFileId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Upload Signed Parent / Guardian Consent Form (PDF / Image)
+              </label>
+              <input
+                id={consentFileId}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.webp"
+                onChange={(e) => setConsentFile(e.target.files?.[0] || null)}
+                className="w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100 cursor-pointer border border-slate-300 rounded-lg p-1"
+              />
+              {consentFile && (
+                <p className="text-[11px] text-emerald-700 font-semibold mt-1 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  Selected: {consentFile.name}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 4. Medical History */}
+        {activeTab === 'medical' && (
+          <div className="space-y-4">
+            <div>
+              <label htmlFor={allergyId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Known Drug Allergies
+              </label>
+              <input
+                id={allergyId}
+                type="text"
+                value={allergies}
+                onChange={(e) => setAllergies(e.target.value)}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                placeholder="e.g. Penicillin, Sulfa drugs, Latex (or None)"
+              />
+            </div>
+
+            <div>
+              <label htmlFor={medCondId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Systemic Medical Conditions
+              </label>
+              <textarea
+                id={medCondId}
+                value={medicalConditions}
+                onChange={(e) => setMedicalConditions(e.target.value)}
+                rows={2}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                placeholder="e.g. Hypertension, Diabetes, Asthma, Cardiac conditions..."
+              />
+            </div>
+
+            <div>
+              <label htmlFor={currMedId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Current Medications
+              </label>
+              <textarea
+                id={currMedId}
+                value={currentMedications}
+                onChange={(e) => setCurrentMedications(e.target.value)}
+                rows={2}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                placeholder="List active prescription medications..."
+              />
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <input
+                id={bleedId}
+                type="checkbox"
+                checked={bleedingDisorders}
+                onChange={(e) => setBleedingDisorders(e.target.checked)}
+                className="w-4 h-4 text-teal-600 rounded border-slate-300"
+              />
+              <label htmlFor={bleedId} className="text-xs font-semibold text-slate-700 cursor-pointer">
+                Bleeding disorders or anticoagulant therapy (Warfarin / Aspirin / Clopidogrel)
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* 5. Dental History */}
+        {activeTab === 'dental' && (
+          <div className="space-y-4">
+            <div>
+              <label htmlFor={chiefId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Chief Dental Complaint
+              </label>
+              <textarea
+                id={chiefId}
+                value={chiefComplaint}
+                onChange={(e) => setChiefComplaint(e.target.value)}
+                rows={3}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+                placeholder="e.g. Pain in lower right molar, sensitivity to cold, routine checkup..."
+              />
+            </div>
+
+            <div>
+              <label htmlFor={brushId} className="block text-xs font-semibold text-slate-700 mb-1">
+                Daily Brushing Frequency
+              </label>
+              <select
+                id={brushId}
+                value={brushingFrequency}
+                onChange={(e) => setBrushingFrequency(e.target.value)}
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+              >
+                <option value="Once daily">Once daily</option>
+                <option value="Twice daily">Twice daily</option>
+                <option value="Three times daily">Three times daily</option>
+                <option value="Irregular">Irregular</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Footer Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-slate-200 mt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+
+          <div className="flex flex-wrap gap-2">
+            {activeTab !== 'dental' && (
+              <button
+                type="button"
+                onClick={() => {
+                  const order: (typeof activeTab)[] = [
+                    'demographics',
+                    'clinical',
+                    'consent',
+                    'medical',
+                    'dental',
+                  ];
+                  const idx = order.indexOf(activeTab);
+                  if (idx < order.length - 1) setActiveTab(order[idx + 1]);
+                }}
+                className="px-3.5 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900"
+              >
+                Next Section →
+              </button>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors disabled:opacity-50"
+            >
+              {isSubmitting
+                ? 'Saving...'
+                : initialData
+                ? 'Update Patient'
+                : 'Save & Register Patient'}
+            </button>
+          </div>
+        </div>
+      </form>
+    </Modal>
   );
 };

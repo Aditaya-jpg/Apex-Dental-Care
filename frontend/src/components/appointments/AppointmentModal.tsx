@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { X, Calendar, Clock, User, AlertCircle } from 'lucide-react';
-import { Patient, User as UserType, AppointmentType, Appointment } from '../../types';
-import { usersApi } from '../../api/users';
+import React, { useState, useEffect, useId } from 'react';
+import { Calendar, AlertCircle } from 'lucide-react';
+import { Patient, Doctor, AppointmentType, Appointment } from '../../types';
+import { doctorsApi } from '../../api/doctors';
 import { patientsApi } from '../../api/patients';
 import { appointmentsApi } from '../../api/appointments';
+import Modal from '../common/Modal';
 
 interface AppointmentModalProps {
   isOpen: boolean;
@@ -12,7 +13,27 @@ interface AppointmentModalProps {
   initialData?: Appointment | null;
   defaultPatientId?: number;
   defaultDate?: string;
+  defaultStartTime?: string;
+  defaultEndTime?: string;
+  defaultDoctorId?: number;
+  defaultOperatory?: string;
 }
+
+const DEFAULT_OPERATORIES = [
+  'Operatory 1',
+  'Operatory 2',
+  'Operatory 3',
+  'Operatory 4',
+  'OT / Surgical Suite',
+];
+
+const FALLBACK_TYPES: AppointmentType[] = [
+  { id: 1, name: 'Consultation & Diagnosis', duration_minutes: 30, color_code: '#0d9488' },
+  { id: 2, name: 'Root Canal Therapy (RCT)', duration_minutes: 60, color_code: '#8b5cf6' },
+  { id: 3, name: 'Periodontal Scaling / Surgery', duration_minutes: 45, color_code: '#3b82f6' },
+  { id: 4, name: 'Extraction / Minor Oral Surgery', duration_minutes: 45, color_code: '#ef4444' },
+  { id: 5, name: 'Follow-up Checkup', duration_minutes: 30, color_code: '#10b981' },
+];
 
 export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   isOpen,
@@ -21,63 +42,101 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   initialData,
   defaultPatientId,
   defaultDate,
+  defaultStartTime,
+  defaultEndTime,
+  defaultDoctorId,
+  defaultOperatory,
 }) => {
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [dentists, setDentists] = useState<UserType[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [types, setTypes] = useState<AppointmentType[]>([]);
 
-  const [patientId, setPatientId] = useState<number | ''>(defaultPatientId || initialData?.patient_id || '');
-  const [dentistId, setDentistId] = useState<number | ''>(initialData?.dentist_id || '');
-  const [typeId, setTypeId] = useState<number | ''>(initialData?.appointment_type_id || '');
-  const [apptDate, setApptDate] = useState(
-    initialData?.appointment_date || new Date().toISOString().slice(0, 10)
+  const [patientId, setPatientId] = useState<number | ''>(
+    defaultPatientId || initialData?.patient_id || ''
   );
-  const [startTime, setStartTime] = useState(initialData?.start_time || '10:00:00');
-  const [endTime, setEndTime] = useState(initialData?.end_time || '10:30:00');
+  const [doctorId, setDoctorId] = useState<number | ''>(
+    defaultDoctorId || initialData?.doctor_id || initialData?.dentist_id || ''
+  );
+  const [operatory, setOperatory] = useState<string>(
+    defaultOperatory || initialData?.operatory || 'Operatory 1'
+  );
+  const [apptType, setApptType] = useState<string>(
+    (typeof initialData?.appointment_type === 'string'
+      ? initialData.appointment_type
+      : initialData?.appointment_type_name) || 'Consultation & Diagnosis'
+  );
+  const [apptDate, setApptDate] = useState(
+    defaultDate || initialData?.appointment_date || new Date().toISOString().slice(0, 10)
+  );
+  const [startTime, setStartTime] = useState(
+    defaultStartTime || initialData?.start_time || '10:00:00'
+  );
+  const [endTime, setEndTime] = useState(
+    defaultEndTime || initialData?.end_time || '10:30:00'
+  );
   const [reason, setReason] = useState(initialData?.reason || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      // Load prerequisites
-      Promise.all([
-        patientsApi.list(1, 100),
-        usersApi.getDentists(),
-        appointmentsApi.getTypes(),
-      ]).then(([pRes, dRes, tRes]) => {
-        setPatients(pRes.items);
-        setDentists(dRes);
-        setTypes(tRes);
+  const patSelectId = useId();
+  const docSelectId = useId();
+  const opSelectId = useId();
+  const typeSelectId = useId();
+  const dateInputId = useId();
+  const startInputId = useId();
+  const endInputId = useId();
+  const reasonInputId = useId();
+  const notesInputId = useId();
 
-        if (!dentistId && dRes.length > 0) {
-          setDentistId(dRes[0].id);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (defaultDate) setApptDate(defaultDate);
+    if (defaultStartTime) setStartTime(defaultStartTime);
+    if (defaultEndTime) setEndTime(defaultEndTime);
+    if (defaultDoctorId) setDoctorId(defaultDoctorId);
+    if (defaultOperatory) setOperatory(defaultOperatory);
+
+    Promise.all([
+      patientsApi.list({ page: 1, pageSize: 100 }).catch(() => ({ items: [] })),
+      doctorsApi.list().catch(() => []),
+      appointmentsApi.getTypes().catch(() => FALLBACK_TYPES),
+    ]).then(([pRes, dRes, tRes]) => {
+      setPatients(pRes.items || []);
+      setDoctors(dRes || []);
+      const resolvedTypes = tRes && tRes.length > 0 ? tRes : FALLBACK_TYPES;
+      setTypes(resolvedTypes);
+
+      if (!doctorId && !defaultDoctorId && dRes && dRes.length > 0) {
+        setDoctorId(dRes[0].id);
+        if (!defaultOperatory && dRes[0].cabin_operatory) {
+          setOperatory(dRes[0].cabin_operatory);
         }
-        if (!typeId && tRes.length > 0) {
-          setTypeId(tRes[0].id);
-        }
-      });
-    }
+      }
+    });
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!patientId || !dentistId || !apptDate || !startTime || !endTime) {
-      setError('Please select patient, dentist, date, and valid time.');
+    if (!patientId || !doctorId || !apptDate || !startTime || !endTime) {
+      setError('Please select patient, attending doctor, date, and valid time.');
       return;
     }
 
     setIsLoading(true);
     setError(null);
     try {
+      const matchedType = types.find((t) => t.name === apptType);
       const payload: any = {
         patient_id: Number(patientId),
-        dentist_id: Number(dentistId),
-        appointment_type_id: typeId ? Number(typeId) : undefined,
+        doctor_id: Number(doctorId),
+        dentist_id: Number(doctorId),
+        operatory,
+        appointment_type: apptType,
+        appointment_type_id: matchedType?.id,
         appointment_date: apptDate,
         start_time: startTime.length === 5 ? `${startTime}:00` : startTime,
         end_time: endTime.length === 5 ? `${endTime}:00` : endTime,
@@ -94,167 +153,197 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Scheduling conflict detected or request failed.');
+      setError(err.message || 'Doctor or Operatory conflict detected or request failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-600 flex items-center justify-center font-bold">
-              <Calendar className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-800">
-                {initialData ? 'Reschedule Appointment' : 'Book Dental Appointment'}
-              </h2>
-              <p className="text-xs text-slate-500">Live conflict detection and operatory scheduling</p>
-            </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={initialData ? 'Reschedule Appointment' : 'Book PGI Dental Appointment'}
+      subtitle="Live doctor & operatory conflict detection + Google Calendar sync"
+      icon={<Calendar className="w-4 h-4" aria-hidden="true" />}
+      maxWidthClass="max-w-lg"
+    >
+      <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4">
+        {error && (
+          <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            <span>{error}</span>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg">
-            <X className="w-5 h-5" />
-          </button>
+        )}
+
+        <div>
+          <label htmlFor={patSelectId} className="block text-xs font-semibold text-slate-700 mb-1">
+            Select Patient *
+          </label>
+          <select
+            id={patSelectId}
+            autoFocus={!defaultPatientId}
+            value={patientId}
+            disabled={!!defaultPatientId}
+            onChange={(e) => setPatientId(Number(e.target.value))}
+            required
+            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white disabled:bg-slate-100"
+          >
+            <option value="">-- Choose Patient --</option>
+            {patients.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.full_name || `${p.first_name} ${p.last_name}`} ({p.cr_number || p.patient_code}) — {p.phone}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
-
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Select Patient *</label>
+            <label htmlFor={docSelectId} className="block text-xs font-semibold text-slate-700 mb-1">
+              Attending Doctor *
+            </label>
             <select
-              value={patientId}
-              disabled={!!defaultPatientId}
-              onChange={(e) => setPatientId(Number(e.target.value))}
+              id={docSelectId}
+              value={doctorId}
+              onChange={(e) => setDoctorId(Number(e.target.value))}
               required
-              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-100"
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
             >
-              <option value="">-- Choose Patient --</option>
-              {patients.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.first_name} {p.last_name} ({p.patient_code}) - {p.phone}
+              <option value="">-- Select Doctor --</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.full_name || d.doctor_name} ({d.specialization})
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Attending Dentist *</label>
-              <select
-                value={dentistId}
-                onChange={(e) => setDentistId(Number(e.target.value))}
-                required
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                {dentists.map((d) => (
-                  <option key={d.id} value={d.dentist_profile?.id || d.id}>
-                    {d.full_name} ({d.dentist_profile?.specialization || 'Dentist'})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Appointment Type</label>
-              <select
-                value={typeId}
-                onChange={(e) => setTypeId(Number(e.target.value))}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                {types.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t.duration_minutes} min)
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Date *</label>
-              <input
-                type="date"
-                required
-                value={apptDate}
-                onChange={(e) => setApptDate(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Start Time *</label>
-              <input
-                type="time"
-                required
-                value={startTime.slice(0, 5)}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">End Time *</label>
-              <input
-                type="time"
-                required
-                value={endTime.slice(0, 5)}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-          </div>
-
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Reason for Visit</label>
+            <label htmlFor={opSelectId} className="block text-xs font-semibold text-slate-700 mb-1">
+              Operatory / Chair *
+            </label>
+            <select
+              id={opSelectId}
+              value={operatory}
+              onChange={(e) => setOperatory(e.target.value)}
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+            >
+              {DEFAULT_OPERATORIES.map((op) => (
+                <option key={op} value={op}>
+                  {op}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor={typeSelectId} className="block text-xs font-semibold text-slate-700 mb-1">
+            Appointment Type
+          </label>
+          <select
+            id={typeSelectId}
+            value={apptType}
+            onChange={(e) => setApptType(e.target.value)}
+            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
+          >
+            {types.map((t) => (
+              <option key={t.id} value={t.name}>
+                {t.name} ({t.duration_minutes} min)
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label htmlFor={dateInputId} className="block text-xs font-semibold text-slate-700 mb-1">
+              Date *
+            </label>
             <input
-              type="text"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Toothache, Scaling, Root Canal Follow-up"
-              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+              id={dateInputId}
+              type="date"
+              required
+              value={apptDate}
+              onChange={(e) => setApptDate(e.target.value)}
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
             />
           </div>
-
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Internal Notes</label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Special instructions or patient requests..."
-              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+            <label htmlFor={startInputId} className="block text-xs font-semibold text-slate-700 mb-1">
+              Start Time *
+            </label>
+            <input
+              id={startInputId}
+              type="time"
+              required
+              value={startTime.slice(0, 5)}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
             />
           </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors disabled:opacity-50"
-            >
-              {isLoading ? 'Checking Conflicts...' : initialData ? 'Update Appointment' : 'Confirm Booking'}
-            </button>
+          <div>
+            <label htmlFor={endInputId} className="block text-xs font-semibold text-slate-700 mb-1">
+              End Time *
+            </label>
+            <input
+              id={endInputId}
+              type="time"
+              required
+              value={endTime.slice(0, 5)}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+            />
           </div>
-        </form>
-      </div>
-    </div>
+        </div>
+
+        <div>
+          <label htmlFor={reasonInputId} className="block text-xs font-semibold text-slate-700 mb-1">
+            Reason for Visit
+          </label>
+          <input
+            id={reasonInputId}
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Root Canal Obturation, Crown Prep"
+            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+          />
+        </div>
+
+        <div>
+          <label htmlFor={notesInputId} className="block text-xs font-semibold text-slate-700 mb-1">
+            Internal Clinical Notes
+          </label>
+          <textarea
+            id={notesInputId}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            placeholder="Operatory setup or clinical reminders..."
+            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors disabled:opacity-50"
+          >
+            {isLoading ? 'Checking Conflicts...' : initialData ? 'Update Appointment' : 'Confirm Booking'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

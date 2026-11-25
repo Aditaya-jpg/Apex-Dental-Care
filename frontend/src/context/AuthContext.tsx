@@ -67,8 +67,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const hasRole = (...roles: Role[]) => {
     if (!user) return false;
-    if (user.role === 'admin') return true; // Admin has universal access
-    return roles.includes(user.role);
+    if (user.role === 'admin' || user.is_admin === true) return true;
+    if (roles.includes(user.role)) return true;
+    if (
+      (user.role === 'doctor' || user.role === 'dentist') &&
+      (roles.includes('doctor') || roles.includes('dentist'))
+    ) {
+      return true;
+    }
+    return false;
   };
 
   return (

@@ -5,12 +5,16 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from app.models.audit import AuditLog
+from app.models.care_log import CareAndSystemLog
 from app.models.user import User
 
 logger = logging.getLogger("audit")
 
-SENSITIVE_KEYS = {"password", "hashed_password", "token", "access_token", "refresh_token", "jwt", "secret"}
+SENSITIVE_KEYS = {
+    "password", "password_hash", "hashed_password", "token",
+    "access_token", "refresh_token", "jwt", "secret", "google_oauth_tokens",
+}
+
 
 def sanitize_audit_data(data: Any) -> Any:
     """Recursively scrub sensitive keys from dictionaries before logging."""
@@ -22,9 +26,10 @@ def sanitize_audit_data(data: Any) -> Any:
             else:
                 cleaned[k] = sanitize_audit_data(v)
         return cleaned
-    elif isinstance(data, list):
+    if isinstance(data, list):
         return [sanitize_audit_data(item) for item in data]
     return data
+
 
 def log_audit_event(
     db: Session,
@@ -37,36 +42,45 @@ def log_audit_event(
     details: dict[str, Any] | str | None = None,
     request: Request | None = None,
     ip_address: str | None = None,
-    user_agent: str | None = None
-) -> AuditLog:
-    """Create an immutable centralized audit log entry."""
-    # Resolve user details
+    user_agent: str | None = None,
+    patient_id: int | None = None,
+) -> CareAndSystemLog:
+    """Create an immutable centralized audit log entry in care_and_system_logs."""
     actual_user_id = user_id or (user.id if user else None)
     actual_user_email = user_email or (user.email if user else None)
 
-    # Resolve network details
     if request:
-        ip_address = ip_address or request.client.host if request.client else "unknown"
+        ip_address = ip_address or (request.client.host if request.client else "unknown")
         user_agent = user_agent or request.headers.get("user-agent", "unknown")
 
-    # Format details safely
     detail_str = None
-    if details:
+    if details is not None:
         if isinstance(details, (dict, list)):
             safe_details = sanitize_audit_data(details)
             detail_str = json.dumps(safe_details)
         else:
             detail_str = str(details)
 
-    audit_entry = AuditLog(
-        user_id=actual_user_id,
-        user_email=actual_user_email,
-        action=action,
-        entity_name=entity_name,
-        entity_id=str(entity_id) if entity_id is not None else None,
-        details=detail_str,
-        ip_address=ip_address,
-        user_agent=user_agent
+    if patient_id is None and entity_name == "Patient" and entity_id and str(entity_id).isdigit():
+        patient_id = int(entity_id)
+
+    audit_entry = CareAndSystemLog(
+        event_type="audit",
+        patient_id=patient_id,
+        actor_user_id=actual_user_id,
+        status="logged",
+        channel="system",
+        language="en",
+        title=action,
+        payload_json={
+            "action": action,
+            "user_email": actual_user_email,
+            "entity_name": entity_name,
+            "entity_id": str(entity_id) if entity_id is not None else None,
+            "details": detail_str,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+        },
     )
 
     db.add(audit_entry)

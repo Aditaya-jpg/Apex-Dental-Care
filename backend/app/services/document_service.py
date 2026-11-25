@@ -1,4 +1,4 @@
-from pathlib import Path
+from datetime import date
 
 from fastapi import HTTPException, Request, UploadFile, status
 from sqlalchemy import desc
@@ -8,7 +8,39 @@ from app.audit.service import log_audit_event
 from app.models.document import Document
 from app.models.patient import Patient
 from app.models.user import User
+from app.schemas.document import DocumentResponse
+from app.security.dependencies import resolve_student_for_user, verify_patient_access
 from app.storage.file_storage import file_storage
+
+
+def to_document_response(doc: Document) -> DocumentResponse:
+    return DocumentResponse(
+        id=doc.id,
+        patient_id=doc.patient_id,
+        clinical_record_id=doc.clinical_record_id,
+        visit_id=doc.clinical_record_id,
+        uploaded_by_user_id=doc.uploaded_by_user_id,
+        document_type=doc.document_type,
+        title=doc.title or doc.original_filename,
+        description=doc.description,
+        notes=doc.description,
+        disease_category=doc.disease_category,
+        treatment_stage=doc.treatment_stage,
+        media_date=doc.media_date or doc.created_at.date(),
+        is_shared_with_patient=doc.is_shared_with_patient,
+        storage_key=doc.storage_key,
+        file_name=doc.file_name,
+        original_filename=doc.original_filename,
+        original_file_name=doc.original_filename,
+        mime_type=doc.mime_type,
+        file_size_bytes=doc.file_size_bytes,
+        file_size=doc.file_size_bytes,
+        is_encrypted=doc.is_encrypted,
+        sha256_checksum=doc.sha256_checksum,
+        created_at=doc.created_at,
+        patient_name=doc.patient.full_name if doc.patient else None,
+        uploaded_by_name=doc.uploaded_by.full_name if doc.uploaded_by else None,
+    )
 
 
 class DocumentService:
@@ -20,29 +52,45 @@ class DocumentService:
         file: UploadFile,
         current_user: User,
         visit_id: int | None = None,
+        clinical_record_id: int | None = None,
+        title: str | None = None,
+        description: str | None = None,
         notes: str | None = None,
-        request: Request | None = None
+        disease_category: str | None = None,
+        treatment_stage: str = "initial_assessment",
+        media_date: date | None = None,
+        is_shared_with_patient: bool = False,
+        request: Request | None = None,
     ) -> Document:
-        patient = db.query(Patient).filter(Patient.id == patient_id, Patient.is_deleted == False).first()
-        if not patient:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "PATIENT_NOT_FOUND", "message": "Patient not found."}
-            )
+        patient = verify_patient_access(db, current_user, patient_id, require_write=True)
 
-        stored_name, orig_name, size_bytes, mime = await file_storage.save_file(file)
+        stored = await file_storage.save_encrypted_upload(
+            patient_id=patient.id,
+            file=file,
+            document_type=document_type,
+        )
+
+        # Students cannot expose items to patient portal; only Doctors/Admin can toggle share
+        shared_flag = bool(is_shared_with_patient) if current_user.role in ("admin", "doctor", "dentist") else False
 
         doc = Document(
-            patient_id=patient_id,
-            visit_id=visit_id,
+            patient_id=patient.id,
+            clinical_record_id=clinical_record_id or visit_id,
+            uploaded_by_user_id=current_user.id,
             document_type=document_type,
-            file_name=stored_name,
-            original_file_name=orig_name,
-            file_size=size_bytes,
-            mime_type=mime,
-            file_path=str(file_storage.get_file_path(stored_name)),
-            notes=notes,
-            uploaded_by_user_id=current_user.id
+            title=title or stored.original_filename,
+            description=description or notes,
+            disease_category=disease_category,
+            treatment_stage=treatment_stage or "initial_assessment",
+            media_date=media_date or date.today(),
+            is_shared_with_patient=shared_flag,
+            storage_key=stored.storage_key,
+            original_filename=stored.original_filename,
+            mime_type=stored.mime_type,
+            file_size_bytes=stored.file_size_bytes,
+            is_encrypted=stored.is_encrypted,
+            encryption_iv=stored.encryption_iv,
+            sha256_checksum=stored.sha256_checksum,
         )
         db.add(doc)
         db.commit()
@@ -54,8 +102,14 @@ class DocumentService:
             user=current_user,
             entity_name="Document",
             entity_id=str(doc.id),
-            details={"patient_id": patient_id, "type": document_type, "filename": orig_name},
-            request=request
+            patient_id=patient.id,
+            details={
+                "patient_id": patient.id,
+                "type": document_type,
+                "filename": stored.original_filename,
+                "sha256": stored.sha256_checksum,
+            },
+            request=request,
         )
 
         return doc
@@ -66,25 +120,71 @@ class DocumentService:
         if not doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"code": "DOCUMENT_NOT_FOUND", "message": "Document not found."}
+                detail={"code": "DOCUMENT_NOT_FOUND", "message": "Document not found."},
             )
         return doc
 
     @staticmethod
-    def get_patient_documents(db: Session, patient_id: int) -> list[Document]:
-        return db.query(Document).filter(Document.patient_id == patient_id).order_by(desc(Document.created_at)).all()
+    def get_patient_documents(db: Session, patient_id: int, current_user: User) -> list[Document]:
+        verify_patient_access(db, current_user, patient_id)
+        return (
+            db.query(Document)
+            .filter(Document.patient_id == patient_id)
+            .order_by(desc(Document.media_date), desc(Document.created_at))
+            .all()
+        )
 
     @staticmethod
-    def get_all_documents(db: Session, document_type: str | None = None) -> list[Document]:
+    def get_all_documents(
+        db: Session,
+        current_user: User,
+        document_type: str | None = None,
+    ) -> list[Document]:
         query = db.query(Document)
+        if current_user.role == "student":
+            stu = resolve_student_for_user(db, current_user)
+            if not stu:
+                return []
+            assigned_ids = [
+                r[0]
+                for r in db.query(Patient.id).filter(Patient.student_id == stu.id, Patient.is_deleted == False).all()
+            ]
+            if not assigned_ids:
+                return []
+            query = query.filter(Document.patient_id.in_(assigned_ids))
+        elif current_user.role in ("receptionist", "patient"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "FORBIDDEN", "message": "Access to clinic document directory is restricted."},
+            )
+
         if document_type:
             query = query.filter(Document.document_type == document_type)
-        return query.order_by(desc(Document.created_at)).all()
+        return query.order_by(desc(Document.media_date), desc(Document.created_at)).all()
 
     @classmethod
-    def get_file_path(cls, db: Session, document_id: int, current_user: User, request: Request | None = None) -> Path:
+    def authorize_download(
+        cls,
+        db: Session,
+        document_id: int,
+        current_user: User,
+        request: Request | None = None,
+    ) -> Document:
+        """
+        Strict IDOR authorization gate:
+        - admin / doctor: allowed across all patients.
+        - student: allowed ONLY if patient.student_id == current_student.id.
+        - patient: allowed ONLY if doc.patient_id == current_user.patient_id AND doc.is_shared_with_patient == True.
+        - receptionist: ALWAYS 403.
+        """
         doc = cls.get_document_by_id(db, document_id)
-        path = file_storage.get_file_path(doc.file_name)
+        verify_patient_access(db, current_user, doc.patient_id, allow_patient_self=True)
+
+        if current_user.role == "patient" and not doc.is_shared_with_patient:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "FORBIDDEN", "message": "This document has not been shared with you."},
+            )
 
         log_audit_event(
             db=db,
@@ -92,8 +192,65 @@ class DocumentService:
             user=current_user,
             entity_name="Document",
             entity_id=str(doc.id),
-            details={"filename": doc.original_file_name},
-            request=request
+            patient_id=doc.patient_id,
+            details={"filename": doc.original_filename},
+            request=request,
         )
 
-        return path
+        return doc
+
+    @classmethod
+    def set_share_status(
+        cls,
+        db: Session,
+        document_id: int,
+        is_shared: bool,
+        current_user: User,
+        request: Request | None = None,
+    ) -> Document:
+        doc = cls.get_document_by_id(db, document_id)
+        verify_patient_access(db, current_user, doc.patient_id, require_write=True)
+        doc.is_shared_with_patient = is_shared
+        db.commit()
+        db.refresh(doc)
+
+        log_audit_event(
+            db=db,
+            action="DOCUMENT_SHARE_UPDATED",
+            user=current_user,
+            entity_name="Document",
+            entity_id=str(doc.id),
+            patient_id=doc.patient_id,
+            details={"is_shared_with_patient": is_shared},
+            request=request,
+        )
+        return doc
+
+    @classmethod
+    def delete_document(
+        cls,
+        db: Session,
+        document_id: int,
+        current_user: User,
+        request: Request | None = None,
+    ) -> None:
+        doc = cls.get_document_by_id(db, document_id)
+        verify_patient_access(db, current_user, doc.patient_id, require_write=True)
+        storage_key = doc.storage_key
+        patient_id = doc.patient_id
+        filename = doc.original_filename
+        db.delete(doc)
+        db.commit()
+        if storage_key and not storage_key.startswith("/"):
+            file_storage.delete_object(storage_key)
+
+        log_audit_event(
+            db=db,
+            action="DOCUMENT_DELETE",
+            user=current_user,
+            entity_name="Document",
+            entity_id=str(document_id),
+            patient_id=patient_id,
+            details={"filename": filename},
+            request=request,
+        )

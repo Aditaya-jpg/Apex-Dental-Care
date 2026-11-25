@@ -1,113 +1,191 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_audit_event
 from app.database import get_db
+from app.models.appointment import Appointment
+from app.models.care_log import CareAndSystemLog
+from app.models.clinical_record import ClinicalRecord
 from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.student import StudentCreate, StudentResponse, StudentUpdate
-from app.security.dependencies import get_current_user, require_roles
+from app.security.dependencies import require_roles, resolve_student_for_user
 from app.security.hashing import hash_password
 
 router = APIRouter(prefix="/students", tags=["Students Management"])
+
+
+def _build_student_response(db: Session, student: Student) -> StudentResponse:
+    pat_cnt = (
+        db.query(func.count(Patient.id))
+        .filter(Patient.student_id == student.id, Patient.is_deleted == False)
+        .scalar()
+        or 0
+    )
+    resp = StudentResponse.model_validate(student)
+    resp.doctor_name = student.doctor.full_name if student.doctor else None
+    resp.patients_count = pat_cnt
+    return resp
+
+
+def _revoke_student_and_unassign(
+    db: Session,
+    student: Student,
+    current_user: User,
+    request: Request | None,
+    *,
+    hard_delete: bool,
+) -> dict[str, str | int]:
+    """
+    Unassign all patients safely (Patient.student_id = None),
+    immediately revoke linked User JWT/refresh tokens, and either delete or mark student revoked.
+    """
+    now = datetime.now(UTC)
+    student_id = student.id
+    student_name = student.full_name
+    student_email = student.email
+
+    # 1. Preserve patient records by clearing student assignment
+    unassigned_count = (
+        db.query(Patient)
+        .filter(Patient.student_id == student_id)
+        .update({"student_id": None}, synchronize_session=False)
+    )
+    db.query(Appointment).filter(Appointment.student_id == student_id).update(
+        {"student_id": None}, synchronize_session=False
+    )
+    db.query(ClinicalRecord).filter(ClinicalRecord.student_id == student_id).update(
+        {"student_id": None}, synchronize_session=False
+    )
+    db.query(CareAndSystemLog).filter(CareAndSystemLog.assigned_student_id == student_id).update(
+        {"assigned_student_id": None}, synchronize_session=False
+    )
+
+    # 2. Immediately revoke User session & prevent login/refresh
+    if student.user_id:
+        user = db.query(User).filter(User.id == student.user_id).first()
+        if user:
+            user.is_active = False
+            user.token_version += 1
+            user.refresh_tokens_json = []
+            user.revoked_at = now
+
+    # 3. Delete or soft-revoke Student row
+    if hard_delete:
+        db.delete(student)
+        action = "STUDENT_DELETE"
+    else:
+        student.is_active = False
+        student.revoked_at = now
+        action = "STUDENT_REVOKE"
+
+    db.commit()
+
+    log_audit_event(
+        db=db,
+        action=action,
+        user=current_user,
+        entity_name="Student",
+        entity_id=str(student_id),
+        details={
+            "student_name": student_name,
+            "email": student_email,
+            "unassigned_patients": unassigned_count,
+            "hard_delete": hard_delete,
+        },
+        request=request,
+    )
+
+    return {
+        "student_id": student_id,
+        "student_name": student_name,
+        "email": student_email,
+        "unassigned_patients": unassigned_count,
+    }
 
 
 @router.post("", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
 def register_student(
     request: Request,
     payload: StudentCreate,
-    current_user: User = Depends(require_roles("admin", "dentist", "doctor")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
 ):
     """
-    Register a new student.
-    - If registered by a Doctor: automatically associates the student with that Doctor.
-    - If registered by Admin: Doctor ID must be specified.
-    - Students are strictly forbidden from registering other students.
+    Admin or Doctor: Register a new student in the single branch-wide students table.
+    doctor_id is OPTIONAL/nullable so students can work flexibly across doctors.
     """
-    # 1. Determine Doctor ID
-    if current_user.role in ["dentist", "doctor"]:
-        doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
-        if not doc and current_user.doctor_id:
-            doc = db.query(Doctor).filter(Doctor.id == current_user.doctor_id).first()
+    assigned_doctor_id = payload.doctor_id
+    doc: Doctor | None = None
+    if assigned_doctor_id is not None:
+        doc = db.query(Doctor).filter(Doctor.id == assigned_doctor_id).first()
         if not doc:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "DOCTOR_NOT_FOUND", "message": "Doctor record not found for logged-in user."}
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "DOCTOR_NOT_FOUND", "message": f"Doctor with ID {assigned_doctor_id} not found."},
             )
-        assigned_doctor_id = doc.id
-    else:
-        # Admin registration
-        if not payload.doctor_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "DOCTOR_REQUIRED", "message": "Admin must specify the supervising doctor ID."}
-            )
-        doc = db.query(Doctor).filter(Doctor.id == payload.doctor_id).first()
-        if not doc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "DOCTOR_NOT_FOUND", "message": f"Doctor with ID {payload.doctor_id} not found."}
-            )
-        assigned_doctor_id = doc.id
 
-    # 2. Check duplicates
-    if db.query(Student).filter(Student.email == payload.email.lower()).first() or \
-       db.query(User).filter(User.email == payload.email.lower()).first():
+    email_lower = payload.email.lower()
+    if (
+        db.query(Student).filter(Student.email == email_lower).first()
+        or db.query(User).filter(User.email == email_lower).first()
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "DUPLICATE_EMAIL", "message": f"A user with email {payload.email} already exists."}
+            detail={"code": "DUPLICATE_EMAIL", "message": f"A user with email {payload.email} already exists."},
         )
 
-    if db.query(Student).filter(Student.enrollment_number == payload.enrollment_number).first():
+    if db.query(Student).filter(Student.roll_number == payload.roll_number).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "DUPLICATE_ENROLLMENT", "message": f"Enrollment number {payload.enrollment_number} already exists."}
+            detail={
+                "code": "DUPLICATE_ENROLLMENT",
+                "message": f"Roll/Enrollment number {payload.roll_number} already exists.",
+            },
         )
 
     pw_hash = hash_password(payload.password)
-    username = payload.email.lower().split("@")[0]
-    base_username = username
+    base_username = email_lower.split("@")[0]
+    username = base_username
     counter = 1
     while db.query(User).filter(User.username == username).first():
         username = f"{base_username}_{counter}"
         counter += 1
 
-    # 3. Create User account
+    is_active = bool(payload.is_active)
     user = User(
-        email=payload.email.lower(),
+        email=email_lower,
         username=username,
-        hashed_password=pw_hash,
-        full_name=payload.student_name,
+        password_hash=pw_hash,
+        full_name=payload.full_name,
         role="student",
-        phone=payload.phone_number,
-        doctor_id=assigned_doctor_id,
-        is_active=(payload.account_status == "active")
+        phone=payload.phone,
+        is_active=is_active,
+        token_version=1,
+        refresh_tokens_json=[],
     )
     db.add(user)
     db.flush()
 
-    # 4. Create Student entry
     student = Student(
-        student_name=payload.student_name,
-        email=payload.email.lower(),
-        phone_number=payload.phone_number,
-        college_institution=payload.college_institution,
-        enrollment_number=payload.enrollment_number,
+        user_id=user.id,
         doctor_id=assigned_doctor_id,
-        password_hash=pw_hash,
-        account_status=payload.account_status,
-        user_id=user.id
+        full_name=payload.full_name,
+        email=email_lower,
+        phone=payload.phone,
+        roll_number=payload.roll_number,
+        year_of_study=payload.year_of_study,
+        department=payload.department,
+        college_institution=payload.college_institution,
+        is_active=is_active,
     )
     db.add(student)
-    db.flush()
-
-    user.student_id = student.id
-
     db.commit()
     db.refresh(student)
 
@@ -117,97 +195,78 @@ def register_student(
         user=current_user,
         entity_name="Student",
         entity_id=str(student.id),
-        details={"name": student.student_name, "email": student.email, "doctor_id": assigned_doctor_id},
-        request=request
+        details={"name": student.full_name, "email": student.email, "doctor_id": assigned_doctor_id},
+        request=request,
     )
 
-    resp = StudentResponse.model_validate(student)
-    resp.doctor_name = doc.doctor_name
-    resp.patients_count = 0
-    return resp
+    return _build_student_response(db, student)
 
 
 @router.get("", response_model=list[StudentResponse])
 def list_students(
     search: str | None = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    doctor_id: int | None = None,
+    include_inactive: bool = False,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
     """
-    List students.
-    - Admin views all students.
-    - Doctor views only students registered under them.
-    - Student views only their own record.
+    List students:
+    - Admin & Doctor view all active students across the PGI branch (optional doctor_id filter).
+    - Student views only their own profile.
+    - Patient & Receptionist are blocked (403).
     """
     query = db.query(Student)
 
-    if current_user.role in ["dentist", "doctor"]:
-        doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
-        c_doc_id = doc.id if doc else (current_user.doctor_id or 0)
-        query = query.filter(Student.doctor_id == c_doc_id)
-    elif current_user.role == "student":
-        stu = db.query(Student).filter((Student.user_id == current_user.id) | (Student.email == current_user.email)).first()
-        c_stu_id = stu.id if stu else (current_user.student_id or 0)
-        query = query.filter(Student.id == c_stu_id)
+    is_admin_actor = current_user.role == "admin" or current_user.is_admin
+    if current_user.role == "student":
+        stu = resolve_student_for_user(db, current_user)
+        query = query.filter(Student.id == (stu.id if stu else 0))
+    else:
+        if not (is_admin_actor and include_inactive):
+            query = query.filter(Student.is_active == True, Student.revoked_at.is_(None))
+        if doctor_id is not None:
+            query = query.filter(Student.doctor_id == doctor_id)
 
     if search:
         st = f"%{search.strip()}%"
         query = query.filter(
-            (Student.student_name.ilike(st)) |
-            (Student.email.ilike(st)) |
-            (Student.enrollment_number.ilike(st)) |
-            (Student.college_institution.ilike(st))
+            or_(
+                Student.full_name.ilike(st),
+                Student.email.ilike(st),
+                Student.roll_number.ilike(st),
+                Student.college_institution.ilike(st),
+                Student.department.ilike(st),
+            )
         )
 
     students = query.order_by(Student.id.asc()).all()
-    results = []
-    for s in students:
-        pat_cnt = db.query(func.count(Patient.id)).filter(Patient.student_id == s.id, Patient.is_deleted == False).scalar() or 0
-        resp = StudentResponse.model_validate(s)
-        resp.doctor_name = s.doctor.doctor_name if s.doctor else None
-        resp.patients_count = pat_cnt
-        results.append(resp)
-
-    return results
+    return [_build_student_response(db, s) for s in students]
 
 
 @router.get("/{student_id}", response_model=StudentResponse)
 def get_student(
     student_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve details of a specific student with authorization checks."""
+    """Retrieve student details. Students can only view their own profile."""
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."}
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
         )
 
-    # Permission check: Doctor can only view their own students
-    if current_user.role in ["dentist", "doctor"]:
-        doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
-        c_doc_id = doc.id if doc else (current_user.doctor_id or 0)
-        if student.doctor_id != c_doc_id and current_user.role != "admin":
+    if current_user.role == "student":
+        own = resolve_student_for_user(db, current_user)
+        if not own or student.id != own.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "You can only view students registered under your supervision."}
-            )
-    elif current_user.role == "student":
-        stu = db.query(Student).filter((Student.user_id == current_user.id) | (Student.email == current_user.email)).first()
-        c_stu_id = stu.id if stu else (current_user.student_id or 0)
-        if student.id != c_stu_id and current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "You can only view your own student profile."}
+                detail={"code": "FORBIDDEN", "message": "You can only view your own student profile."},
             )
 
-    pat_cnt = db.query(func.count(Patient.id)).filter(Patient.student_id == student.id, Patient.is_deleted == False).scalar() or 0
-    resp = StudentResponse.model_validate(student)
-    resp.doctor_name = student.doctor.doctor_name if student.doctor else None
-    resp.patients_count = pat_cnt
-    return resp
+    return _build_student_response(db, student)
 
 
 @router.put("/{student_id}", response_model=StudentResponse)
@@ -215,53 +274,77 @@ def update_student(
     student_id: int,
     payload: StudentUpdate,
     request: Request,
-    current_user: User = Depends(require_roles("admin", "dentist", "doctor")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
 ):
-    """
-    Doctor or Admin: Edit student information or activate/deactivate students.
-    Doctors can only edit students registered under them.
-    """
+    """Admin or Doctor: Edit student profile or optional supervising doctor assignment."""
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."}
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
         )
 
-    if current_user.role in ["dentist", "doctor"]:
-        doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
-        c_doc_id = doc.id if doc else (current_user.doctor_id or 0)
-        if student.doctor_id != c_doc_id and current_user.role != "admin":
+    raw_data = payload.model_dump(exclude_unset=True)
+    new_pw = raw_data.pop("password", None)
+
+    if "student_name" in raw_data and "full_name" not in raw_data:
+        raw_data["full_name"] = raw_data.pop("student_name")
+    else:
+        raw_data.pop("student_name", None)
+
+    if "phone_number" in raw_data and "phone" not in raw_data:
+        raw_data["phone"] = raw_data.pop("phone_number")
+    else:
+        raw_data.pop("phone_number", None)
+
+    if "enrollment_number" in raw_data and "roll_number" not in raw_data:
+        raw_data["roll_number"] = raw_data.pop("enrollment_number")
+    else:
+        raw_data.pop("enrollment_number", None)
+
+    if "account_status" in raw_data and "is_active" not in raw_data:
+        raw_data["is_active"] = raw_data.pop("account_status") == "active"
+    else:
+        raw_data.pop("account_status", None)
+
+    if "email" in raw_data and raw_data["email"]:
+        raw_data["email"] = raw_data["email"].lower()
+
+    if "doctor_id" in raw_data and raw_data["doctor_id"] is not None:
+        doc = db.query(Doctor).filter(Doctor.id == raw_data["doctor_id"]).first()
+        if not doc:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "You can only manage students registered under your supervision."}
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "DOCTOR_NOT_FOUND", "message": f"Doctor with ID {raw_data['doctor_id']} not found."},
             )
 
-    update_data = payload.model_dump(exclude_unset=True)
-    new_pw = update_data.pop("password", None)
+    for k, v in raw_data.items():
+        if hasattr(student, k):
+            setattr(student, k, v)
 
-    for k, v in update_data.items():
-        setattr(student, k, v)
-
-    # Sync User account
     if student.user_id:
         user = db.query(User).filter(User.id == student.user_id).first()
         if user:
-            if "student_name" in update_data:
-                user.full_name = update_data["student_name"]
-            if "phone_number" in update_data:
-                user.phone = update_data["phone_number"]
-            if "email" in update_data:
-                user.email = update_data["email"].lower()
-            if "account_status" in update_data:
-                user.is_active = (update_data["account_status"] == "active")
+            if "full_name" in raw_data:
+                user.full_name = raw_data["full_name"]
+            if "phone" in raw_data:
+                user.phone = raw_data["phone"]
+            if "email" in raw_data:
+                user.email = raw_data["email"]
+            if "is_active" in raw_data:
+                new_active = bool(raw_data["is_active"])
+                if not new_active and user.is_active:
+                    user.token_version += 1
+                    user.refresh_tokens_json = []
+                    user.revoked_at = datetime.now(UTC)
+                    student.revoked_at = datetime.now(UTC)
+                elif new_active:
+                    user.revoked_at = None
+                    student.revoked_at = None
+                user.is_active = new_active
             if new_pw:
-                pw_hash = hash_password(new_pw)
-                user.hashed_password = pw_hash
-                student.password_hash = pw_hash
-    elif new_pw:
-        student.password_hash = hash_password(new_pw)
+                user.password_hash = hash_password(new_pw)
 
     db.commit()
     db.refresh(student)
@@ -272,60 +355,71 @@ def update_student(
         user=current_user,
         entity_name="Student",
         entity_id=str(student.id),
-        details={"updated_fields": list(update_data.keys())},
-        request=request
+        details={"updated_fields": list(raw_data.keys())},
+        request=request,
     )
 
-    pat_cnt = db.query(func.count(Patient.id)).filter(Patient.student_id == student.id, Patient.is_deleted == False).scalar() or 0
-    resp = StudentResponse.model_validate(student)
-    resp.doctor_name = student.doctor.doctor_name if student.doctor else None
-    resp.patients_count = pat_cnt
-    return resp
+    return _build_student_response(db, student)
+
+
+@router.post("/{student_id}/revoke", response_model=MessageResponse)
+def revoke_student(
+    student_id: int,
+    request: Request,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Immediately revoke a student's access, invalidate JWTs, and unassign their patients safely."""
+    student = db.query(Student).filter(Student.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
+        )
+
+    info = _revoke_student_and_unassign(db, student, current_user, request, hard_delete=False)
+    return MessageResponse(
+        message=f"Student {info['student_name']} access revoked immediately ({info['unassigned_patients']} patient assignments cleared)."
+    )
+
+
+@router.delete("/by-email/{email}", response_model=MessageResponse)
+def delete_student_by_email(
+    email: str,
+    request: Request,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Remove a student by email, immediately revoking all JWT sessions and preserving patient records."""
+    student = db.query(Student).filter(Student.email == email.strip().lower()).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with email '{email}' not found."},
+        )
+
+    info = _revoke_student_and_unassign(db, student, current_user, request, hard_delete=True)
+    return MessageResponse(
+        message=f"Student {info['student_name']} ({info['email']}) removed and access revoked immediately."
+    )
 
 
 @router.delete("/{student_id}", response_model=MessageResponse)
 def delete_student(
     student_id: int,
     request: Request,
-    current_user: User = Depends(require_roles("admin", "dentist", "doctor")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
 ):
-    """
-    Doctor or Admin: Deactivate/delete student when appropriate.
-    Doctors can only delete students registered under them.
-    """
+    """Remove a student by ID, immediately revoking all JWT sessions and preserving patient records."""
     student = db.query(Student).filter(Student.id == student_id).first()
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."}
+            detail={"code": "STUDENT_NOT_FOUND", "message": f"Student with ID {student_id} not found."},
         )
 
-    if current_user.role in ["dentist", "doctor"]:
-        doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
-        c_doc_id = doc.id if doc else (current_user.doctor_id or 0)
-        if student.doctor_id != c_doc_id and current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "You can only manage students registered under your supervision."}
-            )
-
-    student.account_status = "inactive"
-    if student.user_id:
-        user = db.query(User).filter(User.id == student.user_id).first()
-        if user:
-            user.is_active = False
-
-    db.commit()
-
-    log_audit_event(
-        db=db,
-        action="STUDENT_DEACTIVATE",
-        user=current_user,
-        entity_name="Student",
-        entity_id=str(student.id),
-        details={"student_name": student.student_name},
-        request=request
+    info = _revoke_student_and_unassign(db, student, current_user, request, hard_delete=True)
+    return MessageResponse(
+        message=f"Student {info['student_name']} removed and access revoked immediately."
     )
-
-    return MessageResponse(message=f"Student {student.student_name} has been deactivated.")

@@ -1,5 +1,11 @@
 import { api } from './client';
-import { Prescription, MedicineCatalog } from '../types';
+import {
+  Prescription,
+  MedicineCatalog,
+  PrescriptionTemplate,
+  TreatmentInstructionTemplate,
+  LanguageCode,
+} from '../types';
 
 export const prescriptionsApi = {
   getCatalog: () => {
@@ -16,6 +22,29 @@ export const prescriptionsApi = {
 
   create: (data: any) => {
     return api.post<Prescription>('/prescriptions', data);
+  },
+
+  getTemplates: () => {
+    return api.get<PrescriptionTemplate[]>('/prescriptions/templates');
+  },
+
+  createTemplate: (data: Partial<PrescriptionTemplate>) => {
+    return api.post<PrescriptionTemplate>('/prescriptions/templates', data);
+  },
+
+  getInstructionsLibrary: (language: LanguageCode = 'en') => {
+    return api.get<TreatmentInstructionTemplate[]>('/prescriptions/instructions-library', { language });
+  },
+
+  sendInstruction: (payload: {
+    patient_id: number;
+    template_key?: string;
+    title: string;
+    content: string;
+    language: LanguageCode;
+    channel?: 'portal' | 'sms' | 'email';
+  }) => {
+    return api.post<{ message: string }>('/prescriptions/instructions/send', payload);
   },
 
   downloadPdf: async (id: number, rxNumber: string) => {

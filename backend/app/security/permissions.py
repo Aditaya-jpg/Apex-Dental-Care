@@ -9,7 +9,7 @@ class Role(StrEnum):
     RECEPTIONIST = "receptionist"
     PATIENT = "patient"
 
-# Specific permission strings
+
 class Permission(StrEnum):
     # User / System
     USER_MANAGE = "user:manage"
@@ -27,7 +27,7 @@ class Permission(StrEnum):
     CLINICAL_CREATE = "clinical:create"
     CLINICAL_UPDATE = "clinical:update"
 
-    # Dental Chart
+    # Dental & Perio Chart
     CHART_READ = "chart:read"
     CHART_UPDATE = "chart:update"
 
@@ -39,18 +39,16 @@ class Permission(StrEnum):
     PRESCRIPTION_READ = "prescription:read"
     PRESCRIPTION_CREATE = "prescription:create"
 
-    # Appointments
+    # Appointments & Attendance
     APPOINTMENT_READ = "appointment:read"
     APPOINTMENT_MANAGE = "appointment:manage"
-
-    # Billing
-    BILLING_READ = "billing:read"
-    BILLING_MANAGE = "billing:manage"
+    ATTENDANCE_MANAGE = "attendance:manage"
 
     # Documents
     DOCUMENT_READ = "document:read"
     DOCUMENT_UPLOAD = "document:upload"
     DOCUMENT_DELETE = "document:delete"
+
 
 ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.ADMIN: {
@@ -62,18 +60,45 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.PATIENT_UPDATE,
         Permission.PATIENT_DELETE,
         Permission.CLINICAL_READ,
+        Permission.CLINICAL_CREATE,
+        Permission.CLINICAL_UPDATE,
         Permission.CHART_READ,
+        Permission.CHART_UPDATE,
         Permission.TREATMENT_READ,
+        Permission.TREATMENT_MANAGE,
         Permission.PRESCRIPTION_READ,
+        Permission.PRESCRIPTION_CREATE,
         Permission.APPOINTMENT_READ,
         Permission.APPOINTMENT_MANAGE,
-        Permission.BILLING_READ,
-        Permission.BILLING_MANAGE,
+        Permission.ATTENDANCE_MANAGE,
         Permission.DOCUMENT_READ,
+        Permission.DOCUMENT_UPLOAD,
+        Permission.DOCUMENT_DELETE,
+    },
+    Role.DOCTOR: {
+        Permission.PATIENT_READ,
+        Permission.PATIENT_CREATE,
+        Permission.PATIENT_UPDATE,
+        Permission.CLINICAL_READ,
+        Permission.CLINICAL_CREATE,
+        Permission.CLINICAL_UPDATE,
+        Permission.CHART_READ,
+        Permission.CHART_UPDATE,
+        Permission.TREATMENT_READ,
+        Permission.TREATMENT_MANAGE,
+        Permission.PRESCRIPTION_READ,
+        Permission.PRESCRIPTION_CREATE,
+        Permission.APPOINTMENT_READ,
+        Permission.APPOINTMENT_MANAGE,
+        Permission.ATTENDANCE_MANAGE,
+        Permission.DOCUMENT_READ,
+        Permission.DOCUMENT_UPLOAD,
         Permission.DOCUMENT_DELETE,
     },
     Role.DENTIST: {
         Permission.PATIENT_READ,
+        Permission.PATIENT_CREATE,
+        Permission.PATIENT_UPDATE,
         Permission.CLINICAL_READ,
         Permission.CLINICAL_CREATE,
         Permission.CLINICAL_UPDATE,
@@ -85,26 +110,10 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.PRESCRIPTION_CREATE,
         Permission.APPOINTMENT_READ,
         Permission.APPOINTMENT_MANAGE,
-        Permission.BILLING_READ,
+        Permission.ATTENDANCE_MANAGE,
         Permission.DOCUMENT_READ,
         Permission.DOCUMENT_UPLOAD,
-    },
-    Role.DOCTOR: {
-        Permission.PATIENT_READ,
-        Permission.CLINICAL_READ,
-        Permission.CLINICAL_CREATE,
-        Permission.CLINICAL_UPDATE,
-        Permission.CHART_READ,
-        Permission.CHART_UPDATE,
-        Permission.TREATMENT_READ,
-        Permission.TREATMENT_MANAGE,
-        Permission.PRESCRIPTION_READ,
-        Permission.PRESCRIPTION_CREATE,
-        Permission.APPOINTMENT_READ,
-        Permission.APPOINTMENT_MANAGE,
-        Permission.BILLING_READ,
-        Permission.DOCUMENT_READ,
-        Permission.DOCUMENT_UPLOAD,
+        Permission.DOCUMENT_DELETE,
     },
     Role.STUDENT: {
         Permission.PATIENT_READ,
@@ -116,25 +125,20 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.CHART_READ,
         Permission.CHART_UPDATE,
         Permission.TREATMENT_READ,
-        Permission.DOCUMENT_READ,
-        Permission.DOCUMENT_UPLOAD,
-        Permission.APPOINTMENT_READ,
-    },
-    Role.RECEPTIONIST: {
-        Permission.PATIENT_READ,
-        Permission.PATIENT_CREATE,
-        Permission.PATIENT_UPDATE,
+        Permission.TREATMENT_MANAGE,
         Permission.APPOINTMENT_READ,
         Permission.APPOINTMENT_MANAGE,
-        Permission.BILLING_READ,
-        Permission.BILLING_MANAGE,
         Permission.DOCUMENT_READ,
         Permission.DOCUMENT_UPLOAD,
+    },
+    Role.RECEPTIONIST: {
+        Permission.ATTENDANCE_MANAGE,
+        Permission.APPOINTMENT_READ,
     },
     Role.PATIENT: {
         Permission.PATIENT_READ,
         Permission.APPOINTMENT_READ,
-        Permission.BILLING_READ,
+        Permission.PRESCRIPTION_READ,
         Permission.DOCUMENT_READ,
-    }
+    },
 }

@@ -1,5 +1,6 @@
 from app.schemas.appointment import (
     AppointmentCreate,
+    AppointmentMissedCreate,
     AppointmentResponse,
     AppointmentStatusUpdate,
     AppointmentTypeResponse,
@@ -12,12 +13,6 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     TokenResponse,
 )
-from app.schemas.billing import (
-    InvoiceCreate,
-    InvoiceItemCreate,
-    InvoiceItemResponse,
-    InvoiceResponse,
-)
 from app.schemas.clinical import VisitCreate, VisitResponse, VisitUpdate
 from app.schemas.common import (
     ErrorDetail,
@@ -25,15 +20,23 @@ from app.schemas.common import (
     MessageResponse,
     PaginatedResponse,
 )
-from app.schemas.dashboard import DashboardAnalyticsResponse, DashboardSummaryResponse
+from app.schemas.dashboard import (
+    AdminDashboardResponse,
+    DashboardAnalyticsResponse,
+    DashboardSummaryResponse,
+    DoctorDashboardResponse,
+    StudentDashboardResponse,
+)
 from app.schemas.dental_chart import (
     DentalChartDetailResponse,
+    PerioChartResponse,
+    PerioChartUpdate,
     ToothConditionResponse,
     ToothConditionUpdate,
     ToothHistoryResponse,
 )
 from app.schemas.doctor import DoctorCreate, DoctorResponse, DoctorUpdate
-from app.schemas.document import DocumentResponse, DocumentUpdate
+from app.schemas.document import DocumentResponse, DocumentShareUpdate, DocumentUpdate
 from app.schemas.followup import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.patient import (
     DentalHistoryBase,
@@ -43,6 +46,7 @@ from app.schemas.patient import (
     PatientCreate,
     PatientDetailResponse,
     PatientListItem,
+    PatientSeverityUpdate,
     PatientUpdate,
 )
 from app.schemas.prescription import (

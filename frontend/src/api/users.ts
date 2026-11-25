@@ -1,12 +1,13 @@
 import { api } from './client';
-import { User } from '../types';
+import { Role, User } from '../types';
 
 export interface UserCreatePayload {
   email: string;
   username: string;
   password: string;
   full_name: string;
-  role: 'admin' | 'dentist' | 'receptionist' | 'patient';
+  role: Role;
+  is_admin?: boolean;
   phone?: string;
   is_active?: boolean;
   dentist_profile?: {
@@ -22,6 +23,7 @@ export interface UserUpdatePayload {
   full_name?: string;
   phone?: string;
   is_active?: boolean;
+  is_admin?: boolean;
   password?: string;
   dentist_profile?: {
     license_number?: string;
@@ -34,10 +36,10 @@ export interface UserUpdatePayload {
 
 export const usersApi = {
   getUsers: (role?: string) => {
-    return api.get<User[]>('/users', { role });
+    return api.get<User[]>('/users', role ? { role } : undefined);
   },
   list: (role?: string) => {
-    return api.get<User[]>('/users', { role });
+    return api.get<User[]>('/users', role ? { role } : undefined);
   },
   getActiveDentists: () => {
     return api.get<User[]>('/users/dentists');

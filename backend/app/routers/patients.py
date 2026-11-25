@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,11 +16,12 @@ from app.schemas.patient import (
     PatientCreate,
     PatientDetailResponse,
     PatientListItem,
+    PatientSeverityUpdate,
     PatientUpdate,
 )
-from app.security.dependencies import get_current_user, require_roles
+from app.security.dependencies import get_current_user, require_roles, verify_patient_access
 from app.services.document_service import DocumentService
-from app.services.patient_service import PatientService
+from app.services.patient_service import PatientService, to_patient_detail
 from app.storage.file_storage import file_storage
 
 router = APIRouter(prefix="/patients", tags=["Patient Management"])
@@ -30,10 +31,14 @@ class DateWiseXrayItem(BaseModel):
     id: int
     patient_id: int
     upload_date: str
+    media_date: date
     created_at: datetime
     xray_type: str
+    title: str | None = None
     description: str | None = None
     disease_category: str | None = None
+    treatment_stage: str = "initial_assessment"
+    is_shared_with_patient: bool = False
     file_name: str
     original_file_name: str
     file_size: int
@@ -46,17 +51,38 @@ class DateWiseXrayItem(BaseModel):
 class CardVerificationUpdate(BaseModel):
     status: str
 
-@router.get("/my-profile", response_model=PatientDetailResponse)
+
+@router.get("/my-profile")
 def get_my_patient_profile(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("patient", "admin")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve full clinical patient profile for the currently logged-in patient user."""
+    """Retrieve sanitized demographic profile for the currently logged-in patient (no internal clinical notes)."""
     if not current_user.patient_id:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No patient record associated with this account.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "PATIENT_NOT_FOUND", "message": "No patient record associated with this account."},
+        )
     patient = PatientService.get_patient_by_id(db, current_user.patient_id)
-    return PatientDetailResponse.model_validate(patient)
+    return {
+        "id": patient.id,
+        "patient_code": patient.patient_code,
+        "cr_number": patient.cr_number,
+        "full_name": patient.full_name,
+        "first_name": patient.first_name,
+        "last_name": patient.last_name,
+        "date_of_birth": patient.date_of_birth,
+        "age": patient.age,
+        "gender": patient.gender,
+        "phone": patient.phone,
+        "email": patient.email,
+        "address": patient.address,
+        "blood_group": patient.blood_group,
+        "preferred_language": patient.preferred_language,
+        "card_verification_status": patient.card_verification_status,
+        "patient_card_document": patient.patient_card_document,
+    }
+
 
 @router.get("", response_model=PaginatedResponse[PatientListItem])
 def list_patients(
@@ -65,10 +91,16 @@ def list_patients(
     search: str | None = None,
     doctor_id: int | None = None,
     student_id: int | None = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    scope: str = Query("all", pattern="^(all|mine)$"),
+    categories: str | None = None,
+    keyword: str | None = None,
+    age_group: str | None = Query(default=None, pattern="^(pediatric|adult|geriatric)$"),
+    special_case: bool | None = None,
+    severity: str | None = Query(default=None, pattern="^(none|mild|moderate|severe|critical)$"),
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve paginated list of patients with search filtering and role-based scoping."""
+    """Retrieve paginated patients. Doctors see ALL branch patients; Students see ONLY assigned patients."""
     items, total = PatientService.get_patients_paginated(
         db,
         page=page,
@@ -76,7 +108,13 @@ def list_patients(
         search=search,
         current_user=current_user,
         doctor_id=doctor_id,
-        student_id=student_id
+        student_id=student_id,
+        scope=scope,
+        categories=categories,
+        keyword=keyword,
+        age_group=age_group,
+        special_case=special_case,
+        severity=severity,
     )
     total_pages = (total + page_size - 1) // page_size if total > 0 else 1
 
@@ -85,113 +123,146 @@ def list_patients(
         total=total,
         page=page,
         page_size=page_size,
-        total_pages=total_pages
+        total_pages=total_pages,
     )
+
 
 @router.post("", response_model=PatientDetailResponse, status_code=status.HTTP_201_CREATED)
 def create_patient(
     request: Request,
     payload: PatientCreate,
-    current_user: User = Depends(require_roles("admin", "receptionist", "dentist", "doctor", "student")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Register a new patient with automatic Doctor/Student hierarchy and CR Number."""
+    """Register a new patient (Admin, Doctor, or Student; Receptionist blocked with 403)."""
     patient = PatientService.create_patient(db, data=payload, current_user=current_user, request=request)
-    return PatientDetailResponse.model_validate(patient)
+    return to_patient_detail(patient)
+
 
 @router.get("/{patient_id}", response_model=PatientDetailResponse)
 def get_patient(
     request: Request,
     patient_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve full patient demographic, medical, and dental history with access control."""
-    patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
+    """Retrieve full patient demographic, medical, and dental history with strict RBAC isolation."""
+    patient = verify_patient_access(db, current_user, patient_id)
 
-    # Log patient view for compliance
     log_audit_event(
         db=db,
         action="PATIENT_VIEW",
         user=current_user,
         entity_name="Patient",
         entity_id=str(patient.id),
+        patient_id=patient.id,
         details={"patient_code": patient.patient_code},
-        request=request
+        request=request,
     )
 
-    return PatientDetailResponse.model_validate(patient)
+    return to_patient_detail(patient)
+
 
 @router.put("/{patient_id}", response_model=PatientDetailResponse)
 def update_patient(
     request: Request,
     patient_id: int,
     payload: PatientUpdate,
-    current_user: User = Depends(require_roles("admin", "receptionist", "dentist", "doctor", "student")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
     """Update patient demographic, student assignment, disease categories, or clinical history."""
     patient = PatientService.update_patient(db, patient_id=patient_id, data=payload, current_user=current_user, request=request)
-    return PatientDetailResponse.model_validate(patient)
+    return to_patient_detail(patient)
+
+
+@router.patch("/{patient_id}/severity", response_model=PatientDetailResponse)
+def update_patient_severity(
+    request: Request,
+    patient_id: int,
+    payload: PatientSeverityUpdate,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Update patient pain scale (0-10) and triage severity level."""
+    patient = PatientService.update_severity(
+        db=db,
+        patient_id=patient_id,
+        pain_scale=payload.pain_scale,
+        severity_level=payload.severity_level,
+        current_user=current_user,
+        request=request,
+    )
+    return to_patient_detail(patient)
+
 
 @router.delete("/{patient_id}", response_model=MessageResponse)
 def delete_patient(
     request: Request,
     patient_id: int,
     current_user: User = Depends(require_roles("admin")),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Soft delete patient record."""
     PatientService.soft_delete_patient(db, patient_id=patient_id, current_user=current_user, request=request)
     return MessageResponse(message=f"Patient {patient_id} successfully archived.")
 
+
 @router.get("/{patient_id}/timeline", response_model=list[dict[str, Any]])
 def get_patient_timeline(
     patient_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve complete chronological clinical history and event timeline."""
-    return PatientService.get_patient_timeline(db, patient_id)
+    """Retrieve complete chronological clinical history and event timeline (zero billing)."""
+    return PatientService.get_patient_timeline(db, patient_id, current_user=current_user)
 
 
 @router.get("/{patient_id}/xrays-datewise", response_model=list[DateWiseXrayItem])
 def get_datewise_xrays(
     patient_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """
-    Retrieve all diagnostic X-rays organized date-wise with hyperlink metadata.
-    Enforces that doctors only access their patients, students access assigned patients.
-    """
-    patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
+    """Retrieve diagnostic X-rays/OPG/CBCT organized date-wise with disease category metadata."""
+    patient = verify_patient_access(db, current_user, patient_id)
 
-    xray_docs = db.query(Document).filter(
-        Document.patient_id == patient.id,
-        Document.document_type.in_(["xray", "opg", "cbct", "pa", "bitewing", "panoramic"])
-    ).order_by(Document.created_at.desc()).all()
+    xray_docs = (
+        db.query(Document)
+        .filter(
+            Document.patient_id == patient.id,
+            Document.document_type.in_(["xray", "opg", "cbct", "pa", "bitewing", "panoramic"]),
+        )
+        .order_by(Document.media_date.desc(), Document.created_at.desc())
+        .all()
+    )
 
     items = []
     for doc in xray_docs:
-        upload_date_str = doc.created_at.strftime("%d %B %Y")
+        media_dt = doc.media_date or doc.created_at.date()
         uploaded_by_name = doc.uploaded_by.full_name if doc.uploaded_by else "Clinical Staff"
-        items.append(DateWiseXrayItem(
-            id=doc.id,
-            patient_id=patient.id,
-            upload_date=upload_date_str,
-            created_at=doc.created_at,
-            xray_type=doc.document_type.upper(),
-            description=doc.notes,
-            disease_category=doc.notes if doc.notes else "Routine Diagnostic",
-            file_name=doc.file_name,
-            original_file_name=doc.original_file_name,
-            file_size=doc.file_size,
-            mime_type=doc.mime_type,
-            uploaded_by=uploaded_by_name,
-            view_url=f"/api/v1/documents/{doc.id}/download",
-            download_url=f"/api/v1/documents/{doc.id}/download"
-        ))
+        items.append(
+            DateWiseXrayItem(
+                id=doc.id,
+                patient_id=patient.id,
+                upload_date=media_dt.strftime("%d %B %Y"),
+                media_date=media_dt,
+                created_at=doc.created_at,
+                xray_type=doc.document_type.upper(),
+                title=doc.title,
+                description=doc.description,
+                disease_category=doc.disease_category or "Routine Diagnostic",
+                treatment_stage=doc.treatment_stage,
+                is_shared_with_patient=doc.is_shared_with_patient,
+                file_name=doc.file_name,
+                original_file_name=doc.original_filename,
+                file_size=doc.file_size_bytes,
+                mime_type=doc.mime_type,
+                uploaded_by=uploaded_by_name,
+                view_url=f"/api/v1/documents/{doc.id}/download",
+                download_url=f"/api/v1/documents/{doc.id}/download",
+            )
+        )
 
     return items
 
@@ -201,58 +272,62 @@ async def upload_datewise_xray(
     request: Request,
     patient_id: int,
     file: UploadFile = File(...),
-    xray_type: str = Form("OPG Panoramic"),
+    xray_type: str = Form("xray"),
+    title: str | None = Form(None),
     description: str | None = Form(None),
     disease_category: str | None = Form(None),
+    treatment_stage: str = Form("initial_assessment"),
     upload_date: str | None = Form(None),
-    current_user: User = Depends(require_roles("admin", "dentist", "doctor", "student")),
-    db: Session = Depends(get_db)
+    is_shared_with_patient: bool = Form(False),
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """
-    Upload an X-ray for a patient with specific metadata, categorized date-wise.
-    Accessible to authorized Doctors and Students.
-    """
-    patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
+    """Upload an encrypted X-ray/OPG/CBCT scan categorized by disease and media_date."""
+    patient = verify_patient_access(db, current_user, patient_id, require_write=True)
 
-    notes_combined = description or ""
-    if disease_category:
-        notes_combined = f"{disease_category} - {notes_combined}".strip(" -")
+    doc_type = xray_type.lower() if xray_type.lower() in ("xray", "opg", "cbct") else "xray"
+    parsed_media_date: date | None = None
+    if upload_date:
+        try:
+            parsed_media_date = datetime.fromisoformat(upload_date).date()
+        except Exception:
+            parsed_media_date = None
 
     doc = await DocumentService.upload_document(
         db=db,
         patient_id=patient.id,
-        document_type="xray",
+        document_type=doc_type,
         file=file,
         current_user=current_user,
-        notes=notes_combined or xray_type,
-        request=request
+        title=title or xray_type,
+        description=description,
+        disease_category=disease_category,
+        treatment_stage=treatment_stage,
+        media_date=parsed_media_date,
+        is_shared_with_patient=is_shared_with_patient if current_user.role != "student" else False,
+        request=request,
     )
 
-    if upload_date:
-        try:
-            parsed_dt = datetime.fromisoformat(upload_date)
-            doc.created_at = parsed_dt
-            db.commit()
-            db.refresh(doc)
-        except Exception:
-            pass
-
-    upload_date_str = doc.created_at.strftime("%d %B %Y")
+    media_dt = doc.media_date or doc.created_at.date()
     return DateWiseXrayItem(
         id=doc.id,
         patient_id=patient.id,
-        upload_date=upload_date_str,
+        upload_date=media_dt.strftime("%d %B %Y"),
+        media_date=media_dt,
         created_at=doc.created_at,
         xray_type=xray_type,
-        description=description,
-        disease_category=disease_category or "Clinical Review",
+        title=doc.title,
+        description=doc.description,
+        disease_category=doc.disease_category or "Clinical Review",
+        treatment_stage=doc.treatment_stage,
+        is_shared_with_patient=doc.is_shared_with_patient,
         file_name=doc.file_name,
-        original_file_name=doc.original_file_name,
-        file_size=doc.file_size,
+        original_file_name=doc.original_filename,
+        file_size=doc.file_size_bytes,
         mime_type=doc.mime_type,
         uploaded_by=current_user.full_name,
         view_url=f"/api/v1/documents/{doc.id}/download",
-        download_url=f"/api/v1/documents/{doc.id}/download"
+        download_url=f"/api/v1/documents/{doc.id}/download",
     )
 
 
@@ -262,52 +337,54 @@ async def upload_patient_card(
     patient_id: int,
     file: UploadFile = File(...),
     cr_number: str | None = Form(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """
-    Upload patient registration/identity card (PDF, JPG, JPEG, PNG).
-    Updates patient card document reference and CR Number if provided.
-    """
-    patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
+    """Upload encrypted patient registration/CR card (PDF, JPG, JPEG, PNG)."""
+    patient = verify_patient_access(db, current_user, patient_id, require_write=True)
 
-    allowed_exts = [".pdf", ".jpg", ".jpeg", ".png"]
-    ext = file.filename[file.filename.rfind("."):].lower() if "." in file.filename else ""
-    if ext not in allowed_exts:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_FILE_TYPE", "message": f"File type {ext} not allowed. Allowed: PDF, JPG, JPEG, PNG"}
-        )
+    stored = await file_storage.save_encrypted_upload(
+        patient_id=patient.id,
+        file=file,
+        document_type="patient_card",
+    )
 
-    # Save file via file_storage
-    stored_name, orig_name, size_bytes, mime = await file_storage.save_file(file)
-
-    # Record in documents table
     doc = Document(
         patient_id=patient.id,
+        uploaded_by_user_id=current_user.id,
         document_type="patient_card",
-        file_name=stored_name,
-        original_file_name=orig_name,
-        file_size=size_bytes,
-        mime_type=mime,
-        file_path=str(file_storage.get_file_path(stored_name)),
-        notes="Patient Identity Card / Registration Document",
-        uploaded_by_user_id=current_user.id
+        title="PGI Patient CR Card",
+        description="Patient Identity Card / CR Registration Document",
+        treatment_stage="initial_assessment",
+        media_date=date.today(),
+        is_shared_with_patient=True,
+        storage_key=stored.storage_key,
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        file_size_bytes=stored.file_size_bytes,
+        is_encrypted=stored.is_encrypted,
+        encryption_iv=stored.encryption_iv,
+        sha256_checksum=stored.sha256_checksum,
     )
     db.add(doc)
+    db.flush()
 
-    patient.patient_card_document = f"/api/v1/patients/{patient.id}/card"
-    patient.card_verification_status = "verified" if current_user.role in ["admin", "dentist", "doctor"] else "pending"
+    patient.card_doc_id = doc.id
+    patient.card_verification_status = "verified" if current_user.role in ("admin", "doctor", "dentist") else "pending"
 
     if cr_number:
-        # Check duplicate CR Number
-        existing = db.query(Patient).filter(Patient.cr_number == cr_number, Patient.id != patient.id, Patient.is_deleted == False).first()
+        clean_cr = cr_number.strip()
+        existing = db.query(Patient).filter(
+            Patient.cr_number == clean_cr,
+            Patient.id != patient.id,
+            Patient.is_deleted == False,
+        ).first()
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "DUPLICATE_CR_NUMBER", "message": f"CR Number {cr_number} is already registered to another patient."}
+                detail={"code": "DUPLICATE_CR_NUMBER", "message": f"CR Number {cr_number} is already registered to another patient."},
             )
-        patient.cr_number = cr_number
+        patient.cr_number = clean_cr
 
     db.commit()
     db.refresh(patient)
@@ -318,45 +395,44 @@ async def upload_patient_card(
         user=current_user,
         entity_name="Patient",
         entity_id=str(patient.id),
-        details={"cr_number": patient.cr_number, "card_file": orig_name},
-        request=request
+        patient_id=patient.id,
+        details={"cr_number": patient.cr_number, "card_file": stored.original_filename, "doc_id": doc.id},
+        request=request,
     )
 
-    return PatientDetailResponse.model_validate(patient)
+    return to_patient_detail(patient)
 
 
 @router.get("/{patient_id}/card")
 def download_patient_card(
     patient_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Download/preview the securely stored patient card."""
-    patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
+    """Download/preview the encrypted patient CR card after authorization check."""
+    patient = verify_patient_access(db, current_user, patient_id, allow_patient_self=True)
 
-    card_doc = db.query(Document).filter(
-        Document.patient_id == patient.id,
-        Document.document_type == "patient_card"
-    ).order_by(Document.created_at.desc()).first()
+    card_doc = None
+    if patient.card_doc_id:
+        card_doc = db.query(Document).filter(Document.id == patient.card_doc_id).first()
+    if not card_doc:
+        card_doc = (
+            db.query(Document)
+            .filter(Document.patient_id == patient.id, Document.document_type == "patient_card")
+            .order_by(Document.created_at.desc())
+            .first()
+        )
 
     if not card_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "CARD_NOT_FOUND", "message": "No registration card has been uploaded for this patient."}
+            detail={"code": "CARD_NOT_FOUND", "message": "No registration card has been uploaded for this patient."},
         )
 
-    file_path = file_storage.get_file_path(card_doc.file_name)
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "FILE_NOT_FOUND", "message": "Card file is missing from storage."}
-        )
-
-    return FileResponse(
-        path=str(file_path),
+    return StreamingResponse(
+        file_storage.iter_decrypted_chunks(card_doc.storage_key),
         media_type=card_doc.mime_type,
-        filename=card_doc.original_file_name,
-        headers={"Content-Disposition": f'inline; filename="{card_doc.original_file_name}"'}
+        headers={"Content-Disposition": f'inline; filename="{card_doc.original_filename}"'},
     )
 
 
@@ -365,11 +441,11 @@ def update_card_verification_status(
     patient_id: int,
     payload: CardVerificationUpdate,
     request: Request,
-    current_user: User = Depends(require_roles("admin", "dentist", "doctor")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
 ):
     """Doctor or Admin: update patient card verification status."""
-    patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
+    patient = verify_patient_access(db, current_user, patient_id, require_write=True)
     patient.card_verification_status = payload.status
     db.commit()
     db.refresh(patient)
@@ -380,8 +456,9 @@ def update_card_verification_status(
         user=current_user,
         entity_name="Patient",
         entity_id=str(patient.id),
+        patient_id=patient.id,
         details={"verification_status": payload.status},
-        request=request
+        request=request,
     )
 
-    return PatientDetailResponse.model_validate(patient)
+    return to_patient_detail(patient)

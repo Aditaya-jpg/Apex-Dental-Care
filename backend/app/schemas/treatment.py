@@ -1,7 +1,6 @@
 from datetime import datetime
-from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class ProcedureCatalogResponse(BaseModel):
@@ -9,61 +8,68 @@ class ProcedureCatalogResponse(BaseModel):
     code: str
     name: str
     category: str
-    default_cost: Decimal
     description: str | None = None
-    model_config = ConfigDict(from_attributes=True)
+
 
 class TreatmentItemCreate(BaseModel):
     procedure_name: str
     tooth_number: int | None = None
-    estimated_cost: Decimal = Field(default=Decimal('0.00'), ge=0)
     notes: str | None = None
+
 
 class TreatmentItemUpdate(BaseModel):
     procedure_name: str | None = None
     tooth_number: int | None = None
-    estimated_cost: Decimal | None = Field(default=None, ge=0)
-    actual_cost: Decimal | None = Field(default=None, ge=0)
     status: str | None = None
     visit_id: int | None = None
     notes: str | None = None
 
+
 class TreatmentItemResponse(BaseModel):
-    id: int
+    id: str | int
     treatment_plan_id: int
     procedure_name: str
     tooth_number: int | None = None
-    estimated_cost: Decimal
-    actual_cost: Decimal
     status: str
     visit_id: int | None = None
     notes: str | None = None
     completed_at: datetime | None = None
-    created_at: datetime
+    created_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
+
 
 class TreatmentPlanCreate(BaseModel):
     patient_id: int
-    dentist_id: int
+    doctor_id: int | None = None
+    dentist_id: int | None = None
     title: str
     notes: str | None = None
     treatments: list[TreatmentItemCreate] = []
+
+    @model_validator(mode="after")
+    def _normalize_doctor(self):
+        if self.doctor_id is None and self.dentist_id is not None:
+            self.doctor_id = self.dentist_id
+        return self
+
 
 class TreatmentPlanUpdate(BaseModel):
     title: str | None = None
     status: str | None = None
     notes: str | None = None
 
+
 class TreatmentPlanResponse(BaseModel):
     id: int
     patient_id: int
-    dentist_id: int
+    doctor_id: int | None = None
+    dentist_id: int | None = None
     title: str
     status: str
-    estimated_total: Decimal
     notes: str | None = None
     created_at: datetime
     updated_at: datetime
+    doctor_name: str | None = None
     dentist_name: str | None = None
     patient_name: str | None = None
     treatments: list[TreatmentItemResponse] = []

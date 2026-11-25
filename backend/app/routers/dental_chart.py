@@ -5,57 +5,80 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.dental_chart import (
     DentalChartDetailResponse,
+    PerioChartResponse,
+    PerioChartUpdate,
     ToothConditionResponse,
     ToothConditionUpdate,
     ToothHistoryResponse,
 )
-from app.security.dependencies import get_current_user, require_roles
+from app.security.dependencies import require_roles
 from app.services.dental_service import DentalChartService
 
-router = APIRouter(prefix="/dental-chart", tags=["FDI Dental Chart"])
+router = APIRouter(prefix="/dental-chart", tags=["FDI Restorative & Perio Chart"])
+
 
 @router.get("/{patient_id}", response_model=DentalChartDetailResponse)
 def get_patient_dental_chart(
     patient_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve full 32 permanent teeth chart, current conditions, and condition history."""
-    return DentalChartService.get_full_chart_details(db, patient_id)
+    """Retrieve full 32 permanent teeth restorative chart and condition history."""
+    return DentalChartService.get_full_chart_details(db, patient_id, current_user=current_user)
+
 
 @router.post("/{patient_id}/tooth", response_model=ToothConditionResponse)
 def update_tooth_condition(
     request: Request,
     patient_id: int,
     payload: ToothConditionUpdate,
-    current_user: User = Depends(require_roles("dentist", "admin")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("doctor", "admin", "student")),
+    db: Session = Depends(get_db),
 ):
-    """
-    Dentist-only: Update condition of an individual FDI permanent tooth (11-48).
-    Creates an immutable history log preserving past states.
-    """
-    cond = DentalChartService.update_tooth_condition(
+    """Update condition of an FDI permanent tooth (11-48) and log immutable history snapshot."""
+    return DentalChartService.update_tooth_condition(
         db=db,
         patient_id=patient_id,
         data=payload,
         current_user=current_user,
-        request=request
+        request=request,
     )
-    return ToothConditionResponse.model_validate(cond)
+
 
 @router.get("/{patient_id}/tooth/{tooth_number}/history", response_model=list[ToothHistoryResponse])
 def get_tooth_history(
     patient_id: int,
     tooth_number: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
     """Retrieve complete clinical history for a single tooth."""
-    records = DentalChartService.get_tooth_history(db, patient_id=patient_id, tooth_number=tooth_number)
-    result = []
-    for r in records:
-        resp = ToothHistoryResponse.model_validate(r)
-        resp.dentist_name = r.dentist.user.full_name if r.dentist and r.dentist.user else None
-        result.append(resp)
-    return result
+    return DentalChartService.get_tooth_history(db, patient_id=patient_id, tooth_number=tooth_number, current_user=current_user)
+
+
+@router.get("/{patient_id}/perio", response_model=PerioChartResponse)
+def get_perio_chart(
+    patient_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Retrieve 6-site periodontal chart and summary metrics."""
+    return DentalChartService.get_perio_chart(db, patient_id=patient_id, current_user=current_user)
+
+
+@router.put("/{patient_id}/perio", response_model=PerioChartResponse)
+def update_perio_chart(
+    request: Request,
+    patient_id: int,
+    payload: PerioChartUpdate,
+    current_user: User = Depends(require_roles("doctor", "admin", "student")),
+    db: Session = Depends(get_db),
+):
+    """Save 6-site periodontal probing depths, BOP, recession, mobility, and furcation."""
+    return DentalChartService.update_perio_chart(
+        db=db,
+        patient_id=patient_id,
+        data=payload,
+        current_user=current_user,
+        request=request,
+    )

@@ -1,28 +1,39 @@
+from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas.document import DocumentResponse
+from app.schemas.common import MessageResponse
+from app.schemas.document import DocumentResponse, DocumentShareUpdate
 from app.security.dependencies import get_current_user, require_roles
-from app.services.document_service import DocumentService
+from app.services.document_service import DocumentService, to_document_response
+from app.storage.file_storage import file_storage
 
-router = APIRouter(prefix="/documents", tags=["Document & X-Ray Management"])
+router = APIRouter(prefix="/documents", tags=["Document & X-Ray Vault"])
+
 
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     request: Request,
     patient_id: int = Form(...),
     document_type: str = Form(...),
+    title: str | None = Form(None),
+    description: str | None = Form(None),
     notes: str | None = Form(None),
+    disease_category: str | None = Form(None),
+    treatment_stage: str = Form("initial_assessment"),
+    media_date: date | None = Form(None),
+    is_shared_with_patient: bool = Form(False),
     visit_id: int | None = Form(None),
+    clinical_record_id: int | None = Form(None),
     file: UploadFile = File(...),
-    current_user: User = Depends(require_roles("admin", "dentist", "doctor", "student", "receptionist")),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Securely upload patient document or diagnostic X-ray image."""
+    """Securely encrypt and upload patient document, clinical photo, or diagnostic scan (2D/CBCT)."""
     doc = await DocumentService.upload_document(
         db=db,
         patient_id=patient_id,
@@ -30,59 +41,82 @@ async def upload_document(
         file=file,
         current_user=current_user,
         visit_id=visit_id,
-        notes=notes,
-        request=request
+        clinical_record_id=clinical_record_id,
+        title=title,
+        description=description or notes,
+        disease_category=disease_category,
+        treatment_stage=treatment_stage,
+        media_date=media_date,
+        is_shared_with_patient=is_shared_with_patient,
+        request=request,
     )
-    resp = DocumentResponse.model_validate(doc)
-    resp.patient_name = doc.patient.full_name if doc.patient else None
-    return resp
+    return to_document_response(doc)
+
 
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
     document_type: str | None = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve all clinic documents and X-rays with optional type filter."""
-    docs = DocumentService.get_all_documents(db, document_type=document_type)
-    result = []
-    for d in docs:
-        resp = DocumentResponse.model_validate(d)
-        resp.patient_name = d.patient.full_name if d.patient else None
-        result.append(resp)
-    return result
+    """Retrieve encrypted clinic documents scoped by RBAC (Students see only assigned patients)."""
+    docs = DocumentService.get_all_documents(db, current_user=current_user, document_type=document_type)
+    return [to_document_response(d) for d in docs]
+
 
 @router.get("/patient/{patient_id}", response_model=list[DocumentResponse])
 def get_patient_documents(
     patient_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
 ):
-    """Retrieve metadata of all documents and X-rays for a patient."""
-    docs = DocumentService.get_patient_documents(db, patient_id)
-    result = []
-    for d in docs:
-        resp = DocumentResponse.model_validate(d)
-        resp.patient_name = d.patient.full_name if d.patient else None
-        result.append(resp)
-    return result
+    """Retrieve metadata of documents and scans for an authorized patient."""
+    docs = DocumentService.get_patient_documents(db, patient_id, current_user=current_user)
+    return [to_document_response(d) for d in docs]
+
 
 @router.get("/{document_id}/download")
 def download_document(
     request: Request,
     document_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Stream protected file securely after verifying authorization."""
-    doc = DocumentService.get_document_by_id(db, document_id)
-    file_path = DocumentService.get_file_path(db, document_id, current_user=current_user, request=request)
-
-    return FileResponse(
-        path=file_path,
+    """Decrypt and stream protected vault file after strict IDOR & patient-sharing verification."""
+    doc = DocumentService.authorize_download(db, document_id, current_user=current_user, request=request)
+    return StreamingResponse(
+        file_storage.iter_decrypted_chunks(doc.storage_key),
         media_type=doc.mime_type,
-        filename=doc.original_file_name,
-        headers={
-            "Content-Disposition": f'inline; filename="{doc.original_file_name}"'
-        }
+        headers={"Content-Disposition": f'inline; filename="{doc.original_filename}"'},
     )
+
+
+@router.patch("/{document_id}/share", response_model=DocumentResponse)
+def toggle_document_share(
+    request: Request,
+    document_id: int,
+    payload: DocumentShareUpdate,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Doctor/Admin: Toggle whether a document or scan is visible in the Patient Portal."""
+    doc = DocumentService.set_share_status(
+        db,
+        document_id=document_id,
+        is_shared=payload.is_shared_with_patient,
+        current_user=current_user,
+        request=request,
+    )
+    return to_document_response(doc)
+
+
+@router.delete("/{document_id}", response_model=MessageResponse)
+def delete_document(
+    request: Request,
+    document_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Doctor/Admin: Permanently remove an encrypted document from vault and database."""
+    DocumentService.delete_document(db, document_id=document_id, current_user=current_user, request=request)
+    return MessageResponse(message=f"Document {document_id} removed.")

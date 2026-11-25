@@ -1,6 +1,6 @@
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -12,50 +12,64 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(100), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
-    role = Column(String(50), nullable=False, default="receptionist") # admin, dentist, receptionist, patient
+    role = Column(String(50), index=True, nullable=False, default="patient")  # admin|doctor|student|receptionist|patient
     phone = Column(String(50), nullable=True)
-    patient_id = Column(Integer, ForeignKey("patients.id", ondelete="SET NULL"), nullable=True)
-    doctor_id = Column(Integer, ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True)
-    student_id = Column(Integer, ForeignKey("students.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    token_version = Column(Integer, default=1, nullable=False)
+    refresh_tokens_json = Column(JSON, default=list, nullable=False)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
 
-    dentist_profile = relationship("Dentist", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    patient = relationship("Patient", back_populates="user_account")
-    refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
-    doctor = relationship("Doctor", foreign_keys=[doctor_id])
-    student = relationship("Student", foreign_keys=[student_id])
+    # 1-to-1 profile links via child FKs (avoids circular FK dependencies)
+    doctor_profile = relationship(
+        "Doctor",
+        back_populates="user",
+        uselist=False,
+        foreign_keys="Doctor.user_id",
+    )
+    student_profile = relationship(
+        "Student",
+        back_populates="user",
+        uselist=False,
+        foreign_keys="Student.user_id",
+    )
+    patient_profile = relationship(
+        "Patient",
+        back_populates="user",
+        uselist=False,
+        foreign_keys="Patient.user_id",
+    )
 
-class Dentist(Base):
-    __tablename__ = "dentists"
+    @property
+    def hashed_password(self) -> str:
+        return self.password_hash
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
-    license_number = Column(String(100), unique=True, nullable=False)
-    specialization = Column(String(150), nullable=False, default="General Dentistry")
-    qualifications = Column(String(255), nullable=True)
-    cabin_number = Column(String(50), nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
+    @hashed_password.setter
+    def hashed_password(self, value: str) -> None:
+        self.password_hash = value
 
-    user = relationship("User", back_populates="dentist_profile")
-    appointments = relationship("Appointment", back_populates="dentist")
-    visits = relationship("Visit", back_populates="dentist")
-    treatment_plans = relationship("TreatmentPlan", back_populates="dentist")
-    prescriptions = relationship("Prescription", back_populates="dentist")
+    @property
+    def doctor_id(self) -> int | None:
+        return self.doctor_profile.id if self.doctor_profile else None
 
-class RefreshToken(Base):
-    __tablename__ = "refresh_tokens"
+    @property
+    def student_id(self) -> int | None:
+        return self.student_profile.id if self.student_profile else None
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    token_hash = Column(String(255), unique=True, index=True, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    revoked = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    @property
+    def patient_id(self) -> int | None:
+        return self.patient_profile.id if self.patient_profile else None
 
-    user = relationship("User", back_populates="refresh_tokens")
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin" or bool(self.doctor_profile and self.doctor_profile.is_admin)
+
+    @property
+    def dentist_profile(self):
+        return self.doctor_profile
