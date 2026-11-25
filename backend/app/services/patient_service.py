@@ -793,7 +793,14 @@ class PatientService:
     @staticmethod
     def get_shared_notices(db: Session, patient_id: int, current_user: User) -> list[dict[str, Any]]:
         patient = verify_patient_access(db, current_user, patient_id, allow_patient_self=True)
-        return list(patient.patient_shared_notices_json or [])
+        normalized = []
+        for n in list(patient.patient_shared_notices_json or []):
+            item = dict(n)
+            item.setdefault("category", item.get("notice_type") or "scan_request")
+            if not item.get("notice_type"):
+                item["notice_type"] = item["category"]
+            normalized.append(item)
+        return normalized
 
     @staticmethod
     def add_shared_notice(

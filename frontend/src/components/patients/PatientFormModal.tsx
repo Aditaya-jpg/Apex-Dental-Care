@@ -318,7 +318,7 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
             title={initialData ? 'Edit PGI Patient Record' : 'Register New PGI Patient'}
             subtitle="Demographics, Disease Categories, Keywords, Parent Consent & Card Upload"
             icon={<UserPlus className="w-4 h-4" aria-hidden="true" />}
-            maxWidthClass="max-w-3xl"
+            maxWidthClass="max-w-4xl"
         >
             {/* Single-row scrollable tabs */}
             <div
@@ -333,7 +333,7 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
                         role="tab"
                         aria-selected={activeTab === tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`py-3 px-3.5 border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
+                        className={`py-3 px-2.5 sm:px-3 border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
                             ? 'border-teal-600 text-teal-700 font-bold bg-white'
                             : 'border-transparent text-slate-500 hover:text-slate-800'
                             }`}

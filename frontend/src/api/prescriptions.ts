@@ -32,8 +32,26 @@ export const prescriptionsApi = {
         return api.post<PrescriptionTemplate>('/prescriptions/templates', data);
     },
 
-    getInstructionsLibrary: (language: LanguageCode = 'en') => {
-        return api.get<TreatmentInstructionTemplate[]>('/prescriptions/instructions-library', { language });
+    getInstructionsLibrary: async (language: LanguageCode = 'en'): Promise<TreatmentInstructionTemplate[]> => {
+        const res = await api.get<any>('/prescriptions/instructions-library', { language });
+        if (Array.isArray(res)) {
+            return res.map((item) => ({
+                ...item,
+                category: item.category || 'care_instruction',
+                content: item.content || item.text || '',
+                language: item.language || language,
+            }));
+        }
+        const lang: LanguageCode = res?.language || language;
+        const pre = Array.isArray(res?.pre_appointment) ? res.pre_appointment : [];
+        const post = Array.isArray(res?.post_treatment) ? res.post_treatment : [];
+        return [...pre, ...post].map((item: any) => ({
+            key: item.key,
+            category: item.category || 'pre_appointment',
+            title: item.title || '',
+            content: item.content || item.text || '',
+            language: lang,
+        }));
     },
 
     sendInstruction: (payload: {

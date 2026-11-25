@@ -42,8 +42,10 @@ export const trackerApi = {
         return api.post<{ message: string; patient: Patient }>(`/tracker/enquiries/${id}/convert`);
     },
 
-    getSlippingPatients: () => {
-        return api.get<SlippingPatient[]>('/tracker/slipping');
+    getSlippingPatients: async (): Promise<SlippingPatient[]> => {
+        const res = await api.get<any>('/tracker/slipping');
+        if (Array.isArray(res)) return res;
+        return Array.isArray(res?.slipping_patients) ? res.slipping_patients : [];
     },
 };
 

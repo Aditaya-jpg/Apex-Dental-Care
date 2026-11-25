@@ -21,11 +21,13 @@ class AttendanceMarkRequest(BaseModel):
 
 
 class WalkInCheckInRequest(BaseModel):
+    identifier: str | None = None
     cr_number: str | None = None
     patient_code: str | None = None
     patient_id: int | None = None
     doctor_id: int | None = None
     operatory: str = "Operatory 1"
+    notes: str | None = None
 
 
 class AttendanceItemResponse(BaseModel):
@@ -191,6 +193,13 @@ def walkin_checkin(
         patient = query.filter(Patient.cr_number == payload.cr_number.strip()).first()
     elif payload.patient_code:
         patient = query.filter(Patient.patient_code == payload.patient_code.strip()).first()
+    elif payload.identifier:
+        ident = payload.identifier.strip()
+        patient = (
+            query.filter(
+                (Patient.cr_number == ident) | (Patient.patient_code == ident) | (Patient.phone == ident)
+            ).first()
+        )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -2,8 +2,10 @@ import { api } from './client';
 import { AttendanceItem } from '../types';
 
 export const attendanceApi = {
-    getToday: (date?: string) => {
-        return api.get<AttendanceItem[]>('/attendance/today', date ? { date } : undefined);
+    getToday: async (date?: string): Promise<AttendanceItem[]> => {
+        const res = await api.get<any>('/attendance/today', date ? { date } : undefined);
+        if (Array.isArray(res)) return res;
+        return Array.isArray(res?.items) ? res.items : [];
     },
 
     markAttendance: (

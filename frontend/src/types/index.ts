@@ -162,7 +162,8 @@ export interface DentalHistory {
 export interface SharedNotice {
     id: string | number;
     title: string;
-    notice_type: 'test_scan' | 'instruction' | 'general';
+    notice_type?: 'test_scan' | 'instruction' | 'general' | string;
+    category?: string;
     message: string;
     description?: string;
     due_date?: string;

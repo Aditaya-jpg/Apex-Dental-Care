@@ -1030,7 +1030,7 @@ export const PatientDetail: React.FC = () => {
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="font-bold text-teal-950">{n.title}</span>
                                             <span className="px-1.5 py-0.5 rounded bg-white text-teal-800 border border-teal-200 text-[10px] font-bold uppercase">
-                                                {n.notice_type.replace(/_/g, ' ')}
+                                                {(n.notice_type || n.category || 'advisory').replace(/_/g, ' ')}
                                             </span>
                                         </div>
                                         <p className="text-slate-700">{n.message}</p>
@@ -1630,7 +1630,7 @@ export const PatientDetail: React.FC = () => {
                                     ) : (
                                         instructionTemplates.map((t) => (
                                             <option key={t.key} value={t.key}>
-                                                [{t.category.replace(/_/g, ' ')}] {t.title}
+                                                [{(t.category || 'general').replace(/_/g, ' ')}] {t.title}
                                             </option>
                                         ))
                                     )}
@@ -1922,7 +1922,7 @@ export const PatientDetail: React.FC = () => {
                                                     <div>
                                                         <div className="flex items-center justify-between gap-2 text-xs mb-1">
                                                             <span className="font-bold uppercase tracking-wider text-[10px] text-teal-700 bg-teal-50 px-2 py-0.5 rounded">
-                                                                {doc.document_type.replace(/_/g, ' ')}
+                                                                {(doc.document_type || 'document').replace(/_/g, ' ')}
                                                             </span>
                                                             <span
                                                                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${isShared

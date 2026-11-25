@@ -155,7 +155,7 @@ export const PatientSharedRecords: React.FC = () => {
                                     <div className="flex items-start justify-between gap-2">
                                         <div>
                                             <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-white border border-slate-200 text-slate-700 mb-1.5">
-                                                {notice.notice_type || 'Diagnostic Advisory'}
+                                                {(notice.notice_type || notice.category || 'Diagnostic Advisory').replace(/_/g, ' ')}
                                             </span>
                                             <h3 className="text-sm font-bold text-slate-900">{notice.title}</h3>
                                         </div>
@@ -230,7 +230,7 @@ export const PatientSharedRecords: React.FC = () => {
                                     <div className="space-y-2">
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide bg-teal-50 text-teal-700 border border-teal-200">
-                                                {doc.document_type.replace(/_/g, ' ')}
+                                                {(doc.document_type || 'scan').replace(/_/g, ' ')}
                                             </span>
                                             {model3D && (
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">

@@ -6,12 +6,16 @@ import {
 } from '../types';
 
 export const patientPortalApi = {
-    getAppointments: () => {
-        return api.get<PatientPortalAppointment[]>('/patient-portal/appointments');
+    getAppointments: async (): Promise<PatientPortalAppointment[]> => {
+        const res = await api.get<any>('/patient-portal/appointments');
+        if (Array.isArray(res)) return res;
+        return Array.isArray(res?.appointments) ? res.appointments : [];
     },
 
-    getPrescriptions: () => {
-        return api.get<PatientPortalPrescription[]>('/patient-portal/prescriptions');
+    getPrescriptions: async (): Promise<PatientPortalPrescription[]> => {
+        const res = await api.get<any>('/patient-portal/prescriptions');
+        if (Array.isArray(res)) return res;
+        return Array.isArray(res?.prescriptions) ? res.prescriptions : [];
     },
 
     getSharedItems: () => {
