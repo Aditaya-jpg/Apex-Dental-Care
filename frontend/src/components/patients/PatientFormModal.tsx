@@ -950,7 +950,7 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const order: (typeof activeTab)[] = [
+                  const order: ('demographics' | 'clinical' | 'consent' | 'medical' | 'dental')[] = [
                     'demographics',
                     'clinical',
                     'consent',

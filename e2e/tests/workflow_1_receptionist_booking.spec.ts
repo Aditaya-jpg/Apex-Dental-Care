@@ -1,37 +1,25 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Workflow 1: Receptionist Patient Registration & Appointment Booking', () => {
-  test('should login as receptionist, register a patient, and schedule an appointment', async ({ page }) => {
-    // 1. Login
+test.describe('Workflow 1: PGI Receptionist Attendance Desk & RBAC Isolation', () => {
+  test('should login as receptionist, land directly on /attendance, and see Attendance Desk only', async ({ page }) => {
+    // 1. Login with PGI Reception account
     await page.goto('/login');
-    await page.fill('input[type="text"]', 'reception1@clinic.com');
-    await page.fill('input[type="password"]', 'Dental@123');
+    await page.fill('input[name="username"]', 'reception@pgi.edu.in');
+    await page.fill('input[name="password"]', 'Dental@123');
     await page.click('button[type="submit"]');
 
-    // Verify redirected to dashboard
-    await expect(page).toHaveURL(/.*dashboard/);
-    await expect(page.locator('text=Receptionist')).toBeVisible();
+    // 2. Verify redirected directly to /attendance (not /dashboard or /patients)
+    await expect(page).toHaveURL(/.*attendance/);
+    await expect(page.locator('h1:has-text("PGI Reception & Patient Attendance Desk")')).toBeVisible();
+    await expect(page.locator('text=Walk-In Patient Check-In')).toBeVisible();
 
-    // 2. Navigate to Patients
-    await page.click('a[href="/patients"]');
-    await expect(page).toHaveURL(/.*patients/);
+    // 3. Sidebar must expose Attendance only
+    await expect(page.locator('aside a[href="/attendance"]')).toBeVisible();
+    await expect(page.locator('aside a[href="/patients"]')).toHaveCount(0);
+    await expect(page.locator('aside a[href="/dashboard"]')).toHaveCount(0);
 
-    // 3. Register Patient
-    await page.click('button:has-text("Register Patient")');
-    await page.fill('input[placeholder*="First Name"]', 'E2E');
-    await page.fill('input[placeholder*="Last Name"]', 'TestPatient');
-    await page.fill('input[type="date"]', '1995-04-12');
-    await page.fill('input[placeholder*="Phone"]', '+1 555-0182');
-    await page.fill('input[placeholder*="Email"]', 'e2e.testpatient@example.com');
-    await page.click('button:has-text("Save & Register Patient")');
-
-    // 4. Verify redirected to patient profile
-    await expect(page).toHaveURL(/.*patients\/\d+/);
-    await expect(page.locator('text=E2E TestPatient')).toBeVisible();
-
-    // 5. Navigate to Appointments and verify schedule
-    await page.click('a[href="/appointments"]');
-    await expect(page).toHaveURL(/.*appointments/);
-    await expect(page.locator('text=Appointment Schedule')).toBeVisible();
+    // 4. Attempting to visit clinical routes must show Access Restricted
+    await page.goto('/patients');
+    await expect(page.locator('text=Access Restricted')).toBeVisible();
   });
 });

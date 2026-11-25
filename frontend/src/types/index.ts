@@ -108,9 +108,11 @@ export interface DentistProfile {
   user_id?: number;
   license_number: string;
   specialization: string;
+  department?: string;
   qualifications?: string;
   cabin_number?: string;
   cabin_operatory?: string;
+  is_admin?: boolean;
   is_active?: boolean;
 }
 
@@ -158,11 +160,14 @@ export interface DentalHistory {
 }
 
 export interface SharedNotice {
-  id: string;
+  id: string | number;
   title: string;
   notice_type: 'test_scan' | 'instruction' | 'general';
   message: string;
+  description?: string;
   due_date?: string;
+  target_date?: string;
+  is_resolved?: boolean;
   language?: LanguageCode;
   created_by?: string;
   created_at: string;
@@ -446,6 +451,7 @@ export interface PrescriptionItem {
   dosage: string;
   frequency: string;
   duration: string;
+  duration_days?: number;
   timing: string;
   instructions?: string;
   localized_instructions?: string;
@@ -508,6 +514,7 @@ export interface DocumentItem {
   sha256_checksum?: string;
   notes?: string;
   file_path?: string;
+  upload_date?: string;
   created_at: string;
   patient_name?: string;
 }

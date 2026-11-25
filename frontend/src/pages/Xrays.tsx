@@ -27,6 +27,7 @@ import { Oral3DViewer, ShaderMode } from '../components/xrays/Oral3DViewer';
 import { xraysApi, ReconstructResponse, XraySample, PatientXrayItem } from '../api/xrays';
 import { patientsApi } from '../api/patients';
 import { useAuth } from '../context/AuthContext';
+import { Modal } from '../components/common/Modal';
 import { Patient } from '../types';
 
 export default function Xrays() {
@@ -318,13 +319,17 @@ export default function Xrays() {
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-1 items-center gap-3">
           <div className="relative flex-1 max-w-md">
-            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-              Select Clinic Patient (Optional)
+            <label
+              htmlFor="xray-patient-search"
+              className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1"
+            >
+              Select PGI Dental Patient (Optional)
             </label>
             <div className="relative">
               <input
+                id="xray-patient-search"
                 type="text"
-                placeholder="Search patient by name or code (e.g. John Doe)..."
+                placeholder="Search patient by name, CR number, or code..."
                 value={selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name} (${selectedPatient.patient_code})` : patientSearch}
                 onChange={(e) => {
                   setPatientSearch(e.target.value);
@@ -617,6 +622,7 @@ export default function Xrays() {
                 </div>
                 <input
                   type="range"
+                  aria-label="Bone and enamel isovalue threshold"
                   min="-0.80"
                   max="0.10"
                   step="0.05"
@@ -712,6 +718,7 @@ export default function Xrays() {
                 </div>
                 <input
                   type="range"
+                  aria-label="Axial plane Z slice index"
                   min="0"
                   max="159"
                   value={axialIndex}
@@ -735,6 +742,7 @@ export default function Xrays() {
                 </div>
                 <input
                   type="range"
+                  aria-label="Coronal plane Y slice index"
                   min="0"
                   max="255"
                   value={coronalIndex}
@@ -758,6 +766,7 @@ export default function Xrays() {
                 </div>
                 <input
                   type="range"
+                  aria-label="Sagittal plane X slice index"
                   min="0"
                   max="287"
                   value={sagittalIndex}
@@ -878,85 +887,82 @@ export default function Xrays() {
       </div>
 
       {/* Save to Patient Record Modal */}
-      {isSaveModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 border border-slate-200 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
-                  <Save className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Save 3D X-Ray to Patient Record</h3>
-                  <p className="text-[11px] text-slate-500">
-                    Patient: {selectedPatient?.first_name} {selectedPatient?.last_name} ({selectedPatient?.patient_code})
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsSaveModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-              >
-                &times;
-              </button>
+      <Modal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        title="Save 3D X-Ray to Patient Record"
+        subtitle={
+          selectedPatient
+            ? `Patient: ${selectedPatient.first_name} ${selectedPatient.last_name} (${selectedPatient.patient_code})`
+            : undefined
+        }
+        icon={<Save className="w-4 h-4" aria-hidden="true" />}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="p-6 space-y-4">
+          <div className="space-y-3 text-xs">
+            <div>
+              <label htmlFor="xray-save-title" className="block font-bold text-slate-700 mb-1">
+                Scan / Document Title
+              </label>
+              <input
+                id="xray-save-title"
+                type="text"
+                value={saveTitle}
+                onChange={(e) => setSaveTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 font-medium"
+              />
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Scan / Document Title</label>
-                <input
-                  type="text"
-                  value={saveTitle}
-                  onChange={(e) => setSaveTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Clinical Diagnostic Findings / Notes</label>
-                <textarea
-                  rows={3}
-                  placeholder="Record crown alignment, dental arch dimensions, alveolar bone density notes..."
-                  value={clinicalNotes}
-                  onChange={(e) => setClinicalNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 font-medium"
-                />
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1 text-[11px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Estimated Arch Width:</span>
-                  <span className="font-bold text-slate-800">{metrics.arch_width_mm} mm</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Estimated Hard Volume:</span>
-                  <span className="font-bold text-slate-800">{metrics.volume_cm3} cm³</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Surface Mesh Complexity:</span>
-                  <span className="font-bold text-slate-800">{metrics.vertices.toLocaleString()} verts</span>
-                </div>
-              </div>
+            <div>
+              <label htmlFor="xray-save-notes" className="block font-bold text-slate-700 mb-1">
+                Clinical Diagnostic Findings / Notes
+              </label>
+              <textarea
+                id="xray-save-notes"
+                rows={3}
+                placeholder="Record crown alignment, dental arch dimensions, alveolar bone density notes..."
+                value={clinicalNotes}
+                onChange={(e) => setClinicalNotes(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 font-medium"
+              />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setIsSaveModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmSave}
-                disabled={saveMutation.isPending}
-                className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-700/20 flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {saveMutation.isPending ? 'Saving...' : 'Confirm & Save to Record'}
-              </button>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Estimated Arch Width:</span>
+                <span className="font-bold text-slate-800">{metrics.arch_width_mm} mm</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Estimated Hard Volume:</span>
+                <span className="font-bold text-slate-800">{metrics.volume_cm3} cm³</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Surface Mesh Complexity:</span>
+                <span className="font-bold text-slate-800">{metrics.vertices.toLocaleString()} verts</span>
+              </div>
             </div>
           </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsSaveModalOpen(false)}
+              className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmSave}
+              disabled={saveMutation.isPending}
+              className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-teal-700/20 flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {saveMutation.isPending ? 'Saving...' : 'Confirm & Save to Record'}
+            </button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

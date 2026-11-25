@@ -129,7 +129,7 @@ export const patientsApi = {
     return api.post<SharedNotice>(`/patients/${id}/shared-notices`, data);
   },
 
-  deleteSharedNotice: (id: number, noticeId: string) => {
-    return api.delete<{ message: string }>(`/patients/${id}/shared-notices/${encodeURIComponent(noticeId)}`);
+  deleteSharedNotice: (id: number, noticeId: string | number) => {
+    return api.delete<{ message: string }>(`/patients/${id}/shared-notices/${encodeURIComponent(String(noticeId))}`);
   },
 };

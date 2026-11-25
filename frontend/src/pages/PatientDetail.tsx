@@ -456,10 +456,10 @@ export const PatientDetail: React.FC = () => {
     }
   };
 
-  const handleDeleteNotice = async (noticeId: string) => {
+  const handleDeleteNotice = async (noticeId: string | number) => {
     try {
       await patientsApi.deleteSharedNotice(patientId, noticeId);
-      setSharedNotices((prev) => prev.filter((n) => n.id !== noticeId));
+      setSharedNotices((prev) => prev.filter((n) => String(n.id) !== String(noticeId)));
     } catch (err: any) {
       alert(err.message || 'Failed to delete advisory');
     }
@@ -1269,7 +1269,7 @@ export const PatientDetail: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: TREATMENT PLANS & DATE-WISE SURGICAL LOGS (ZERO COST/₹!) */}
+      {/* TAB 3: TREATMENT PLANS & DATE-WISE SURGICAL LOGS */}
       {activeTab === 'treatments' && (
         <div className="space-y-6">
           {/* Treatment Plans Section */}
