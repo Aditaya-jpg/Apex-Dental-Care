@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Workflow 3: Receptionist Billing, Invoicing & Payment Processing', () => {
-  test('should login as receptionist, inspect invoices, and open payment modal', async ({ page }) => {
+test.describe('Workflow 3: Receptionist Billing & Invoicing Management', () => {
+  test('should login as receptionist, inspect invoices, and view details', async ({ page }) => {
     // 1. Login
     await page.goto('/login');
     await page.fill('input[type="text"]', 'reception1@clinic.com');
@@ -19,13 +19,5 @@ test.describe('Workflow 3: Receptionist Billing, Invoicing & Payment Processing'
     await expect(page.locator('text=Total Billed')).toBeVisible();
     await expect(page.locator('text=Total Collected')).toBeVisible();
     await expect(page.locator('text=Outstanding Balance')).toBeVisible();
-
-    // 4. Check if any invoice has a Pay button or click first invoice
-    const payBtn = page.locator('button:has-text("Pay")').first();
-    if (await payBtn.isVisible()) {
-      await payBtn.click();
-      await expect(page.locator('text=Record Payment')).toBeVisible();
-      await page.click('button:has-text("Cancel")');
-    }
   });
 });

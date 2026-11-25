@@ -24,6 +24,9 @@ class UserBase(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     role: str = Field(default="receptionist") # admin, dentist, receptionist, patient
     phone: str | None = None
+    patient_id: int | None = None
+    doctor_id: int | None = None
+    student_id: int | None = None
     is_active: bool = True
 
 class UserCreate(UserBase):
@@ -35,6 +38,7 @@ class UserUpdate(BaseModel):
     full_name: str | None = None
     phone: str | None = None
     role: str | None = None
+    patient_id: int | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8)
     dentist_profile: DentistProfileCreate | None = None

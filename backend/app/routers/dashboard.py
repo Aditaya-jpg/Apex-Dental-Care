@@ -3,8 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
-from app.schemas.dashboard import DashboardAnalyticsResponse, DashboardSummaryResponse
-from app.security.dependencies import get_current_user
+from app.schemas.dashboard import (
+    AdminDashboardResponse,
+    DashboardAnalyticsResponse,
+    DashboardSummaryResponse,
+    DoctorDashboardResponse,
+    StudentDashboardResponse,
+)
+from app.security.dependencies import get_current_user, require_roles
 from app.services.dashboard_service import DashboardService
 
 router = APIRouter(prefix="/dashboard", tags=["Clinic Dashboard & Analytics"])
@@ -26,3 +32,27 @@ def get_dashboard_analytics(
 ):
     """Retrieve chart trend data for appointments, procedures, revenue, and new patients."""
     return DashboardService.get_analytics(db, days=days)
+
+@router.get("/admin", response_model=AdminDashboardResponse)
+def get_admin_dashboard(
+    current_user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db)
+):
+    """Admin-only: Retrieve clinic-wide doctors, students, patients, and activity metrics."""
+    return DashboardService.get_admin_dashboard(db)
+
+@router.get("/doctor", response_model=DoctorDashboardResponse)
+def get_doctor_dashboard(
+    current_user: User = Depends(require_roles("admin", "dentist", "doctor")),
+    db: Session = Depends(get_db)
+):
+    """Doctor dashboard: My students, patients breakdown, and pending clinical follow-ups."""
+    return DashboardService.get_doctor_dashboard(db, current_user=current_user)
+
+@router.get("/student", response_model=StudentDashboardResponse)
+def get_student_dashboard(
+    current_user: User = Depends(require_roles("admin", "student")),
+    db: Session = Depends(get_db)
+):
+    """Student dashboard: My assigned patients, pending records, and upcoming sessions."""
+    return DashboardService.get_student_dashboard(db, current_user=current_user)

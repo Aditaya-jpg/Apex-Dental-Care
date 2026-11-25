@@ -33,7 +33,6 @@ import {
   Visit,
   TreatmentPlan,
   Prescription,
-  Invoice,
   DocumentItem,
   FollowUp,
   Appointment,
@@ -44,7 +43,6 @@ import { dentalChartApi } from '../api/dentalChart';
 import { clinicalApi } from '../api/clinical';
 import { treatmentsApi } from '../api/treatments';
 import { prescriptionsApi } from '../api/prescriptions';
-import { billingApi } from '../api/billing';
 import { documentsApi } from '../api/documents';
 import { followupsApi } from '../api/followups';
 import { appointmentsApi } from '../api/appointments';
@@ -55,9 +53,6 @@ import { ToothModal } from '../components/dental/ToothModal';
 import { VisitModal } from '../components/clinical/VisitModal';
 import { TreatmentPlanModal } from '../components/treatments/TreatmentPlanModal';
 import { PrescriptionModal } from '../components/prescriptions/PrescriptionModal';
-import { InvoiceModal } from '../components/billing/InvoiceModal';
-import { PaymentModal } from '../components/billing/PaymentModal';
-import { OnlinePaymentModal } from '../components/billing/OnlinePaymentModal';
 import { DocumentUploadModal } from '../components/documents/DocumentUploadModal';
 import { FollowUpModal } from '../components/followups/FollowUpModal';
 import { AppointmentModal } from '../components/appointments/AppointmentModal';
@@ -75,14 +70,13 @@ export const PatientDetail: React.FC = () => {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [plans, setPlans] = useState<TreatmentPlan[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [followups, setFollowups] = useState<FollowUp[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [timeline, setTimeline] = useState<any[]>([]);
 
   const [activeTab, setActiveTab] = useState<
-    'chart' | 'visits' | 'treatments' | 'prescriptions' | 'xrays' | 'billing' | 'documents' | 'appointments' | 'followups' | 'history' | 'timeline'
+    'chart' | 'visits' | 'treatments' | 'prescriptions' | 'xrays' | 'documents' | 'appointments' | 'followups' | 'history' | 'timeline'
   >('chart');
 
   const [active3DModel, setActive3DModel] = useState<string | null>(null);
@@ -92,9 +86,6 @@ export const PatientDetail: React.FC = () => {
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [isRxModalOpen, setIsRxModalOpen] = useState(false);
-  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
-  const [onlinePaymentInvoice, setOnlinePaymentInvoice] = useState<Invoice | null>(null);
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [isFollowupModalOpen, setIsFollowupModalOpen] = useState(false);
   const [isApptModalOpen, setIsApptModalOpen] = useState(false);
@@ -112,7 +103,6 @@ export const PatientDetail: React.FC = () => {
         visRes,
         planRes,
         rxRes,
-        invRes,
         docRes,
         fuRes,
         apptRes,
@@ -123,7 +113,6 @@ export const PatientDetail: React.FC = () => {
         clinicalApi.getPatientVisits(patientId),
         treatmentsApi.listPlans({ patient_id: patientId }),
         prescriptionsApi.list({ patient_id: patientId }),
-        billingApi.listInvoices({ patient_id: patientId }),
         documentsApi.getPatientDocuments(patientId),
         followupsApi.list({ patient_id: patientId }),
         appointmentsApi.list({ patient_id: patientId }),
@@ -135,7 +124,6 @@ export const PatientDetail: React.FC = () => {
       setVisits(visRes);
       setPlans(planRes);
       setPrescriptions(rxRes);
-      setInvoices(invRes);
       setDocuments(docRes);
       setFollowups(fuRes);
       setAppointments(apptRes);
@@ -279,7 +267,6 @@ export const PatientDetail: React.FC = () => {
                 d.original_file_name.endsWith('.glb')
             ).length,
           },
-          { id: 'billing', label: 'Billing & Invoices', count: invoices.length },
           { id: 'documents', label: 'Documents', count: documents.filter((d) => !['xray', 'opg', 'cbct'].includes(d.document_type)).length },
           { id: 'appointments', label: 'Appointments', count: appointments.length },
           { id: 'followups', label: 'Follow-ups', count: followups.length },
@@ -571,173 +558,6 @@ export const PatientDetail: React.FC = () => {
                     <p className="text-xs text-slate-600 italic bg-slate-50 p-3 rounded-xl border border-slate-100">
                       <b>General Advice:</b> {rx.general_instructions}
                     </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 5: BILLING & INVOICES */}
-      {activeTab === 'billing' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-800">Invoices & Payment Transactions</h2>
-            {hasRole('admin', 'receptionist') && (
-              <button
-                onClick={() => setIsInvoiceModalOpen(true)}
-                className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Create Invoice
-              </button>
-            )}
-          </div>
-
-          {invoices.length === 0 ? (
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-xs text-slate-400">
-              No invoices generated for this patient yet.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {invoices.map((inv) => (
-                <div key={inv.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-                          {inv.invoice_number}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            inv.status === 'paid'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : inv.status === 'partially_paid'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {inv.status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Issued: {formatDateIN(inv.issue_date)} • Due: {formatDateIN(inv.due_date)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400 uppercase font-semibold text-[10px]">Balance Due</p>
-                        <p className="text-sm font-extrabold text-rose-600">{formatINR(inv.balance)}</p>
-                      </div>
-
-                      {hasRole('admin', 'receptionist') && Number(inv.balance) > 0 && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => setOnlinePaymentInvoice(inv)}
-                            className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition-all"
-                            title="Process secure online payment gateway checkout"
-                          >
-                            <CreditCard className="w-3.5 h-3.5" />
-                            <span>Pay Online</span>
-                          </button>
-                          <button
-                            onClick={() => setPaymentInvoice(inv)}
-                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition-all"
-                            title="Record offline cash/card/UPI payment"
-                          >
-                            <IndianRupee className="w-3.5 h-3.5" />
-                            <span>Manual Pay</span>
-                          </button>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => billingApi.downloadPdf(inv.id, inv.invoice_number)}
-                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>PDF</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Items breakdown */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 text-slate-500 font-semibold uppercase text-[10px]">
-                        <tr>
-                          <th className="py-2 px-4">Item Description</th>
-                          <th className="py-2 px-4">Unit Price</th>
-                          <th className="py-2 px-4">Qty</th>
-                          <th className="py-2 px-4 text-right">Total (₹)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {inv.items.map((i) => (
-                          <tr key={i.id}>
-                            <td className="py-2 px-4 font-medium text-slate-800">{i.description}</td>
-                            <td className="py-2 px-4">{formatINR(i.unit_price)}</td>
-                            <td className="py-2 px-4">{i.quantity}</td>
-                            <td className="py-2 px-4 text-right font-mono font-bold">{formatINR(i.total)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Payment transactions history */}
-                  {inv.payments && inv.payments.length > 0 && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                        Recorded Payments ({inv.payments.length})
-                      </p>
-                      <div className="space-y-1.5">
-                        {inv.payments.map((pay) => (
-                          <div
-                            key={pay.id}
-                            className="flex items-center justify-between text-xs p-2 bg-slate-50 rounded-lg border border-slate-100 hover:bg-slate-100/70 transition-colors"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-600 font-medium">
-                                {formatDateIN(pay.payment_date)} • {pay.payment_method.toUpperCase()}
-                                {pay.provider && (
-                                  <span className="ml-1 text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded border border-indigo-100">
-                                    {pay.provider.toUpperCase()}
-                                  </span>
-                                )}
-                                {pay.status && (
-                                  <span
-                                    className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                      pay.status === 'SUCCESS'
-                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                        : pay.status === 'PENDING'
-                                        ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                                        : 'bg-rose-50 text-rose-700 border border-rose-100'
-                                    }`}
-                                  >
-                                    {pay.status}
-                                  </span>
-                                )}
-                                {pay.transaction_reference && ` (${pay.transaction_reference})`}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-emerald-600">+{formatINR(pay.amount)}</span>
-                              {pay.status === 'SUCCESS' && (
-                                <button
-                                  onClick={() => billingApi.downloadReceiptPdf(pay.id, pay.transaction_reference || String(pay.id))}
-                                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-0.5 px-2 py-0.5 bg-white rounded border border-slate-200 hover:border-indigo-300 transition-colors"
-                                  title="Download Official Receipt PDF"
-                                >
-                                  <Download className="w-3 h-3" /> Receipt
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   )}
                 </div>
               ))}
@@ -1243,37 +1063,6 @@ export const PatientDetail: React.FC = () => {
           patientName={`${patient.first_name} ${patient.last_name}`}
           isOpen={isRxModalOpen}
           onClose={() => setIsRxModalOpen(false)}
-          onSuccess={loadPatientData}
-        />
-      )}
-
-      {/* Invoice Modal */}
-      {isInvoiceModalOpen && (
-        <InvoiceModal
-          patientId={patientId}
-          patientName={`${patient.first_name} ${patient.last_name}`}
-          isOpen={isInvoiceModalOpen}
-          onClose={() => setIsInvoiceModalOpen(false)}
-          onSuccess={loadPatientData}
-        />
-      )}
-
-      {/* Payment Modal */}
-      {paymentInvoice && (
-        <PaymentModal
-          invoice={paymentInvoice}
-          isOpen={!!paymentInvoice}
-          onClose={() => setPaymentInvoice(null)}
-          onSuccess={loadPatientData}
-        />
-      )}
-
-      {/* Online Payment Modal */}
-      {onlinePaymentInvoice && (
-        <OnlinePaymentModal
-          invoice={onlinePaymentInvoice}
-          isOpen={!!onlinePaymentInvoice}
-          onClose={() => setOnlinePaymentInvoice(null)}
           onSuccess={loadPatientData}
         />
       )}

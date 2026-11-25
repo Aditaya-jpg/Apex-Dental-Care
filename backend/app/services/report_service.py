@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.models.billing import Invoice, Payment
+from app.models.billing import Invoice
 
 
 class ReportService:
@@ -16,24 +16,24 @@ class ReportService:
         start_date: date | None = None,
         end_date: date | None = None
     ) -> list[dict[str, Any]]:
-        query = db.query(Payment)
+        query = db.query(Invoice)
         if start_date:
-            query = query.filter(Payment.payment_date >= start_date)
+            query = query.filter(Invoice.issue_date >= start_date)
         if end_date:
-            query = query.filter(Payment.payment_date <= end_date)
+            query = query.filter(Invoice.issue_date <= end_date)
 
-        payments = query.order_by(desc(Payment.payment_date)).all()
+        invoices = query.order_by(desc(Invoice.issue_date)).all()
         return [
             {
-                "payment_id": p.id,
-                "invoice_number": p.invoice.invoice_number if p.invoice else "",
-                "patient_name": p.patient.full_name if p.patient else "",
-                "amount": float(p.amount),
-                "method": p.payment_method,
-                "reference": p.transaction_reference or "",
-                "date": p.payment_date.strftime('%Y-%m-%d %H:%M')
+                "invoice_id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "patient_name": inv.patient.full_name if inv.patient else "",
+                "amount": float(inv.total),
+                "status": inv.status,
+                "due_date": inv.due_date.isoformat(),
+                "date": inv.issue_date.isoformat()
             }
-            for p in payments
+            for inv in invoices
         ]
 
     @staticmethod
@@ -59,10 +59,8 @@ class ReportService:
 
     @staticmethod
     def export_csv(headers: list[str], rows: list[list[Any]]) -> str:
-        """Render rows to CSV string."""
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
-        for r in rows:
-            writer.writerow(r)
+        writer.writerows(rows)
         return output.getvalue()

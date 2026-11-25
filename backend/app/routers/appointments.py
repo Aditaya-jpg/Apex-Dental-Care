@@ -37,6 +37,9 @@ def list_appointments(
     db: Session = Depends(get_db)
 ):
     """List appointments filtered by date, dentist, patient, or status."""
+    if current_user.role == "patient":
+        patient_id = current_user.patient_id
+
     appts = AppointmentService.get_appointments(
         db,
         appointment_date=appointment_date,

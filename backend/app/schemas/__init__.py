@@ -17,8 +17,6 @@ from app.schemas.billing import (
     InvoiceItemCreate,
     InvoiceItemResponse,
     InvoiceResponse,
-    PaymentCreate,
-    PaymentResponse,
 )
 from app.schemas.clinical import VisitCreate, VisitResponse, VisitUpdate
 from app.schemas.common import (
@@ -34,6 +32,7 @@ from app.schemas.dental_chart import (
     ToothConditionUpdate,
     ToothHistoryResponse,
 )
+from app.schemas.doctor import DoctorCreate, DoctorResponse, DoctorUpdate
 from app.schemas.document import DocumentResponse, DocumentUpdate
 from app.schemas.followup import FollowUpCreate, FollowUpResponse, FollowUpUpdate
 from app.schemas.patient import (
@@ -53,6 +52,7 @@ from app.schemas.prescription import (
     PrescriptionItemResponse,
     PrescriptionResponse,
 )
+from app.schemas.student import StudentCreate, StudentResponse, StudentUpdate
 from app.schemas.treatment import (
     ProcedureCatalogResponse,
     TreatmentItemCreate,

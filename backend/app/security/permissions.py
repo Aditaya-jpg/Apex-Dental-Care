@@ -4,6 +4,8 @@ from enum import StrEnum
 class Role(StrEnum):
     ADMIN = "admin"
     DENTIST = "dentist"
+    DOCTOR = "doctor"
+    STUDENT = "student"
     RECEPTIONIST = "receptionist"
     PATIENT = "patient"
 
@@ -86,6 +88,37 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.BILLING_READ,
         Permission.DOCUMENT_READ,
         Permission.DOCUMENT_UPLOAD,
+    },
+    Role.DOCTOR: {
+        Permission.PATIENT_READ,
+        Permission.CLINICAL_READ,
+        Permission.CLINICAL_CREATE,
+        Permission.CLINICAL_UPDATE,
+        Permission.CHART_READ,
+        Permission.CHART_UPDATE,
+        Permission.TREATMENT_READ,
+        Permission.TREATMENT_MANAGE,
+        Permission.PRESCRIPTION_READ,
+        Permission.PRESCRIPTION_CREATE,
+        Permission.APPOINTMENT_READ,
+        Permission.APPOINTMENT_MANAGE,
+        Permission.BILLING_READ,
+        Permission.DOCUMENT_READ,
+        Permission.DOCUMENT_UPLOAD,
+    },
+    Role.STUDENT: {
+        Permission.PATIENT_READ,
+        Permission.PATIENT_CREATE,
+        Permission.PATIENT_UPDATE,
+        Permission.CLINICAL_READ,
+        Permission.CLINICAL_CREATE,
+        Permission.CLINICAL_UPDATE,
+        Permission.CHART_READ,
+        Permission.CHART_UPDATE,
+        Permission.TREATMENT_READ,
+        Permission.DOCUMENT_READ,
+        Permission.DOCUMENT_UPLOAD,
+        Permission.APPOINTMENT_READ,
     },
     Role.RECEPTIONIST: {
         Permission.PATIENT_READ,

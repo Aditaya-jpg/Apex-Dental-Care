@@ -19,7 +19,7 @@ async def upload_document(
     notes: str | None = Form(None),
     visit_id: int | None = Form(None),
     file: UploadFile = File(...),
-    current_user: User = Depends(require_roles("admin", "dentist", "receptionist")),
+    current_user: User = Depends(require_roles("admin", "dentist", "doctor", "student", "receptionist")),
     db: Session = Depends(get_db)
 ):
     """Securely upload patient document or diagnostic X-ray image."""

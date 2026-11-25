@@ -20,8 +20,6 @@ import {
 import { billingApi } from '../api/billing';
 import { useAuth } from '../context/AuthContext';
 import InvoiceModal from '../components/billing/InvoiceModal';
-import PaymentModal from '../components/billing/PaymentModal';
-import { OnlinePaymentModal } from '../components/billing/OnlinePaymentModal';
 import { Invoice } from '../types';
 import { formatINR, formatDateIN, formatDateTimeIN } from '../utils/formatters';
 
@@ -35,8 +33,6 @@ export default function Billing() {
   
   // Modals
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-  const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
-  const [onlinePaymentInvoice, setOnlinePaymentInvoice] = useState<Invoice | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   // Fetch Invoices
@@ -245,36 +241,6 @@ export default function Billing() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {/* Pay Online Button */}
-                      {balance > 0 && inv.status !== 'voided' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOnlinePaymentInvoice(inv);
-                          }}
-                          className="inline-flex items-center px-3 py-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-sm transition"
-                          title="Pay Online via Gateway (UPI/Card)"
-                        >
-                          <CreditCard className="w-3.5 h-3.5 mr-1" />
-                          Pay Online
-                        </button>
-                      )}
-
-                      {/* Record Manual Payment Button */}
-                      {balance > 0 && inv.status !== 'voided' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPaymentInvoice(inv);
-                          }}
-                          className="inline-flex items-center px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shadow-sm transition"
-                          title="Record Cash/Manual Payment at Desk"
-                        >
-                          <IndianRupee className="w-3.5 h-3.5 mr-1" />
-                          Manual Pay
-                        </button>
-                      )}
-
                       {/* Download PDF */}
                       <button
                         onClick={(e) => handleDownloadPdf(inv, e)}
@@ -322,69 +288,6 @@ export default function Billing() {
                         </table>
                       </div>
                     </div>
-
-                    {/* Payment Transactions History */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Payment Transaction History</h4>
-                      {(!inv.payments || inv.payments.length === 0) ? (
-                        <p className="text-xs text-slate-500 italic bg-white p-3 rounded-lg border border-slate-200">No payment transactions recorded yet.</p>
-                      ) : (
-                        <div className="overflow-x-auto bg-white rounded-lg border border-slate-200">
-                          <table className="w-full text-left text-xs">
-                            <thead>
-                              <tr className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
-                                <th className="py-2 px-3">Transaction #</th>
-                                <th className="py-2 px-3">Date</th>
-                                <th className="py-2 px-3">Method</th>
-                                <th className="py-2 px-3">Channel / Provider</th>
-                                <th className="py-2 px-3">Status</th>
-                                <th className="py-2 px-3">Reference</th>
-                                <th className="py-2 px-3 text-right">Amount</th>
-                                <th className="py-2 px-3 text-center">Receipt</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {inv.payments.map((p) => (
-                                <tr key={p.id} className="hover:bg-slate-50/60">
-                                  <td className="py-2 px-3 font-mono text-slate-600">TXN-{p.id}</td>
-                                  <td className="py-2 px-3 text-slate-600">{formatDateTimeIN(p.payment_date)}</td>
-                                  <td className="py-2 px-3 capitalize font-medium text-slate-800">{p.payment_method.replace('_', ' ')}</td>
-                                  <td className="py-2 px-3">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${p.provider === 'razorpay' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
-                                      {p.provider || 'Manual'}
-                                    </span>
-                                  </td>
-                                  <td className="py-2 px-3">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      p.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' :
-                                      p.status === 'FAILED' ? 'bg-rose-50 text-rose-700' :
-                                      p.status === 'REFUNDED' ? 'bg-purple-50 text-purple-700' :
-                                      'bg-amber-50 text-amber-700'
-                                    }`}>
-                                      {p.status || 'SUCCESS'}
-                                    </span>
-                                  </td>
-                                  <td className="py-2 px-3 text-slate-500 font-mono text-[11px]">{p.transaction_reference || '-'}</td>
-                                  <td className="py-2 px-3 text-right font-bold text-emerald-600">+{formatINR(p.amount)}</td>
-                                  <td className="py-2 px-3 text-center">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        billingApi.downloadReceiptPdf(p.id);
-                                      }}
-                                      className="p-1 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded transition"
-                                      title="Download Official Payment Receipt (PDF)"
-                                    >
-                                      <Download className="w-3.5 h-3.5" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
               </div>
@@ -400,32 +303,6 @@ export default function Billing() {
           onClose={() => setIsInvoiceModalOpen(false)}
           onSuccess={() => {
             setIsInvoiceModalOpen(false);
-            queryClient.invalidateQueries({ queryKey: ['invoices'] });
-          }}
-        />
-      )}
-
-      {/* Record Manual Payment Modal */}
-      {paymentInvoice && (
-        <PaymentModal
-          isOpen={!!paymentInvoice}
-          onClose={() => setPaymentInvoice(null)}
-          invoice={paymentInvoice}
-          onSuccess={() => {
-            setPaymentInvoice(null);
-            queryClient.invalidateQueries({ queryKey: ['invoices'] });
-          }}
-        />
-      )}
-
-      {/* Online Payment Gateway Modal */}
-      {onlinePaymentInvoice && (
-        <OnlinePaymentModal
-          isOpen={!!onlinePaymentInvoice}
-          onClose={() => setOnlinePaymentInvoice(null)}
-          invoice={onlinePaymentInvoice}
-          onSuccess={() => {
-            setOnlinePaymentInvoice(null);
             queryClient.invalidateQueries({ queryKey: ['invoices'] });
           }}
         />

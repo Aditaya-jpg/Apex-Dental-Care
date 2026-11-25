@@ -44,6 +44,13 @@ class PatientBase(BaseModel):
     emergency_contact_name: str | None = None
     emergency_contact_phone: str | None = None
     blood_group: str | None = None
+    doctor_id: int | None = None
+    student_id: int | None = None
+    cr_number: str | None = None
+    disease_categories: list[str] = []
+    patient_card_document: str | None = None
+    card_verification_status: str = "pending"
+    account_status: str = "active"
 
 class PatientCreate(PatientBase):
     medical_history: MedicalHistoryBase | None = None
@@ -60,18 +67,31 @@ class PatientUpdate(BaseModel):
     emergency_contact_name: str | None = None
     emergency_contact_phone: str | None = None
     blood_group: str | None = None
+    doctor_id: int | None = None
+    student_id: int | None = None
+    cr_number: str | None = None
+    disease_categories: list[str] | None = None
+    patient_card_document: str | None = None
+    card_verification_status: str | None = None
+    account_status: str | None = None
     medical_history: MedicalHistoryBase | None = None
     dental_history: DentalHistoryBase | None = None
 
 class PatientListItem(PatientBase):
     id: int
     patient_code: str
+    doctor_name: str | None = None
+    student_name: str | None = None
+    age: int | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
 class PatientDetailResponse(PatientBase):
     id: int
     patient_code: str
+    doctor_name: str | None = None
+    student_name: str | None = None
+    age: int | None = None
     created_at: datetime
     updated_at: datetime
     medical_history: MedicalHistoryResponse | None = None

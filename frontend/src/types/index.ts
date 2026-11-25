@@ -1,4 +1,49 @@
-export type Role = 'admin' | 'dentist' | 'receptionist' | 'patient';
+export type Role = 'admin' | 'dentist' | 'doctor' | 'student' | 'receptionist' | 'patient';
+
+export interface Doctor {
+  id: number;
+  doctor_name: string;
+  email: string;
+  phone_number?: string;
+  qualification?: string;
+  specialization: string;
+  registration_number: string;
+  account_status: string;
+  created_at: string;
+  students_count?: number;
+  patients_count?: number;
+}
+
+export interface Student {
+  id: number;
+  student_name: string;
+  email: string;
+  phone_number?: string;
+  college_institution: string;
+  enrollment_number: string;
+  doctor_id: number;
+  doctor_name?: string;
+  account_status: string;
+  created_at: string;
+  patients_count?: number;
+}
+
+export interface DateWiseXrayItem {
+  id: number;
+  patient_id: number;
+  upload_date: string;
+  created_at: string;
+  xray_type: string;
+  description?: string;
+  disease_category?: string;
+  file_name: string;
+  original_file_name: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_by?: string;
+  view_url: string;
+  download_url: string;
+}
 
 export interface User {
   id: number;
@@ -7,6 +52,9 @@ export interface User {
   full_name: string;
   role: Role;
   phone?: string;
+  patient_id?: number;
+  doctor_id?: number;
+  student_id?: number;
   is_active: boolean;
   created_at: string;
   dentist_profile?: DentistProfile;
@@ -53,7 +101,9 @@ export interface Patient {
   patient_code: string;
   first_name: string;
   last_name: string;
+  patient_name?: string;
   date_of_birth: string;
+  age?: number;
   gender: 'Male' | 'Female' | 'Other';
   phone: string;
   email?: string;
@@ -61,6 +111,15 @@ export interface Patient {
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
   blood_group?: string;
+  doctor_id?: number;
+  doctor_name?: string;
+  student_id?: number;
+  student_name?: string;
+  cr_number?: string;
+  disease_categories?: string[];
+  patient_card_document?: string;
+  card_verification_status?: string;
+  account_status?: string;
   created_at: string;
   updated_at?: string;
   medical_history?: MedicalHistory;
@@ -264,6 +323,7 @@ export interface Payment {
   payment_date: string;
   paid_at?: string;
   notes?: string;
+  invoice_number?: string;
 }
 
 export interface PaymentOrderResponse {
@@ -313,7 +373,7 @@ export interface Invoice {
   created_at: string;
   patient_name?: string;
   items: InvoiceItem[];
-  payments: Payment[];
+  payments?: Payment[];
 }
 
 export interface DocumentItem {

@@ -16,6 +16,9 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="receptionist") # admin, dentist, receptionist, patient
     phone = Column(String(50), nullable=True)
+    patient_id = Column(Integer, ForeignKey("patients.id", ondelete="SET NULL"), nullable=True)
+    doctor_id = Column(Integer, ForeignKey("doctors.id", ondelete="SET NULL"), nullable=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
@@ -23,7 +26,10 @@ class User(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False)
 
     dentist_profile = relationship("Dentist", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    patient = relationship("Patient", back_populates="user_account")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    doctor = relationship("Doctor", foreign_keys=[doctor_id])
+    student = relationship("Student", foreign_keys=[student_id])
 
 class Dentist(Base):
     __tablename__ = "dentists"

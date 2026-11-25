@@ -109,19 +109,19 @@ export const Oral3DViewer: React.FC<Oral3DViewerProps> = ({
     controlsRef.current = controls;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
     scene.add(ambientLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.2);
+    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.35);
     keyLight.position.set(120, 180, 150);
     keyLight.castShadow = true;
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight(0x00f2fe, 0.85);
+    const rimLight = new THREE.DirectionalLight(0x00f2fe, 0.95);
     rimLight.position.set(-150, 80, -120);
     scene.add(rimLight);
 
-    const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.5);
+    const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.6);
     fillLight.position.set(0, -100, 100);
     scene.add(fillLight);
 
@@ -134,19 +134,20 @@ export const Oral3DViewer: React.FC<Oral3DViewerProps> = ({
     // Materials creation
     materialsRef.current = {
       enamel: new THREE.MeshPhysicalMaterial({
-        color: 0xf3efe6,
-        emissive: 0x111625,
-        roughness: 0.28,
-        metalness: 0.04,
-        clearcoat: 0.55,
-        clearcoatRoughness: 0.18,
-        reflectivity: 0.8,
+        color: 0xf6f3ed,
+        emissive: 0x0f172a,
+        emissiveIntensity: 0.12,
+        roughness: 0.22,
+        metalness: 0.02,
+        clearcoat: 0.70,
+        clearcoatRoughness: 0.15,
+        reflectivity: 0.88,
         flatShading: false,
       }),
       heatmap: new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        roughness: 0.35,
-        metalness: 0.2,
+        color: 0x00d2ff,
+        roughness: 0.30,
+        metalness: 0.25,
         wireframe: false,
       }),
       wireframe: new THREE.MeshBasicMaterial({
@@ -159,11 +160,14 @@ export const Oral3DViewer: React.FC<Oral3DViewerProps> = ({
         flatShading: false,
       }),
       xray: new THREE.MeshPhysicalMaterial({
-        color: 0xa5f3fc,
-        roughness: 0.1,
-        transmission: 0.75,
+        color: 0x93c5fd,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.35,
+        roughness: 0.12,
+        transmission: 0.82,
         transparent: true,
-        opacity: 0.45,
+        opacity: 0.65,
+        ior: 1.45,
         depthWrite: false,
         side: THREE.DoubleSide,
       }),

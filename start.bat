@@ -17,5 +17,5 @@ echo Backend running at: http://127.0.0.1:8000
 echo Frontend running at: http://localhost:3000
 echo.
 echo Opening browser in 3 seconds...
-timeout /t 3 /nobreak >nul
+ping 127.0.0.1 -n 4 >nul
 start http://localhost:3000

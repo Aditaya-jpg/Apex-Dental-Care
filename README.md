@@ -44,12 +44,10 @@ Apex Dental Care is a **production-ready, end-to-end dental clinic management an
    - Medicine dosage, frequency, duration, route, and timing instructions.
    - Official signed vector PDF generated on-the-fly via ReportLab with security disclaimers and clinic letterhead.
 
-7. **Transactional Billing, Invoices & Online Payment Gateway:**
+7. **Itemized Billing & Clinical Invoicing:**
    - Itemized invoices with item description, unit price, quantity, tax, and discounts.
-   - Dual payment channels: Offline payments (Cash, Card swipe, Manual UPI) and **Integrated Online Payment Gateway (Razorpay / India Gateway Abstraction)**.
-   - Server-side cryptographic HMAC-SHA256 signature verification, webhook listeners, and row-level locking for atomic ledger balances.
-   - Idempotency guarantees, anti-tampering protection, refund ledger, and branded official payment receipts with ReportLab.
-   - For full architecture, setup, and sandbox testing, see [PAYMENTS.md](file:///d:/Coding/Minor%20Project/PAYMENTS.md).
+   - Conversion from multi-procedure treatment plans directly into official dental bills.
+   - Branded official invoice vector PDF generation with ReportLab and clinic letterhead.
 
 8. **Secure Document & X-Ray Vault:**
    - Storage abstraction for Panoramic OPGs, IOPA X-rays, CBCT scans, lab reports, and signed consent forms.

@@ -5,7 +5,9 @@ from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_audit_event
+from app.models.doctor import Doctor
 from app.models.patient import DentalHistory, MedicalHistory, Patient
+from app.models.student import Student
 from app.models.user import User
 from app.schemas.patient import PatientCreate, PatientUpdate
 
@@ -25,16 +27,81 @@ class PatientService:
         current_user: User,
         request: Request | None = None
     ) -> Patient:
-        """Register a new patient along with optional medical and dental histories in one transaction."""
+        """Register a new patient with automatic Doctor/Student hierarchy and CR number."""
         patient_code = cls._generate_patient_code(db)
 
-        # Check existing email/phone if appropriate
+        # Check existing phone
         existing_phone = db.query(Patient).filter(Patient.phone == data.phone, Patient.is_deleted == False).first()
         if existing_phone:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={"code": "DUPLICATE_PHONE", "message": f"A patient with phone {data.phone} already exists."}
             )
+
+        # Check duplicate CR Number if provided, else auto-generate
+        if data.cr_number:
+            existing_cr = db.query(Patient).filter(Patient.cr_number == data.cr_number, Patient.is_deleted == False).first()
+            if existing_cr:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "DUPLICATE_CR_NUMBER", "message": f"A patient with CR Number {data.cr_number} already exists."}
+                )
+            cr_num = data.cr_number
+        else:
+            total_pts = db.query(func.count(Patient.id)).scalar() or 0
+            cr_num = f"CR-{1001 + total_pts}"
+
+        # Automatic Doctor & Student assignment resolution
+        doc_id = None
+        stu_id = None
+
+        if current_user.role in ["dentist", "doctor"]:
+            # Current user is a Doctor
+            doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
+            if not doc and current_user.doctor_id:
+                doc = db.query(Doctor).filter(Doctor.id == current_user.doctor_id).first()
+            doc_id = doc.id if doc else 1
+
+            if data.student_id:
+                student = db.query(Student).filter(Student.id == data.student_id, Student.doctor_id == doc_id).first()
+                if not student:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={"code": "INVALID_STUDENT", "message": "The assigned student is not registered under this doctor."}
+                    )
+                stu_id = student.id
+            else:
+                stu_id = None
+
+        elif current_user.role == "student":
+            # Current user is a Student: automatically populate Student ID and associated Doctor ID
+            student = db.query(Student).filter((Student.user_id == current_user.id) | (Student.email == current_user.email)).first()
+            if not student and current_user.student_id:
+                student = db.query(Student).filter(Student.id == current_user.student_id).first()
+            if not student:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "STUDENT_NOT_FOUND", "message": "No student record associated with this account."}
+                )
+            stu_id = student.id
+            doc_id = student.doctor_id  # Automatically retrieved from Students table!
+
+        elif current_user.role == "admin":
+            doc_id = data.doctor_id or 1
+            if data.student_id:
+                student = db.query(Student).filter(Student.id == data.student_id, Student.doctor_id == doc_id).first()
+                if not student:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={"code": "INVALID_STUDENT", "message": "The assigned student is not registered under this doctor."}
+                    )
+                stu_id = student.id
+            else:
+                stu_id = None
+        else:
+            # receptionist or other fallback
+            doc_id = data.doctor_id or 1
+            stu_id = data.student_id
 
         new_patient = Patient(
             patient_code=patient_code,
@@ -48,10 +115,17 @@ class PatientService:
             emergency_contact_name=data.emergency_contact_name,
             emergency_contact_phone=data.emergency_contact_phone,
             blood_group=data.blood_group,
+            doctor_id=doc_id,
+            student_id=stu_id,
+            cr_number=cr_num,
+            disease_categories=data.disease_categories or [],
+            patient_card_document=data.patient_card_document,
+            card_verification_status=data.card_verification_status or "pending",
+            account_status=data.account_status or "active",
             is_deleted=False
         )
         db.add(new_patient)
-        db.flush() # Flush to acquire patient ID
+        db.flush()
 
         # Optional Medical History
         if data.medical_history:
@@ -94,7 +168,13 @@ class PatientService:
             user=current_user,
             entity_name="Patient",
             entity_id=str(new_patient.id),
-            details={"patient_code": new_patient.patient_code, "name": new_patient.full_name},
+            details={
+                "patient_code": new_patient.patient_code,
+                "name": new_patient.full_name,
+                "doctor_id": new_patient.doctor_id,
+                "student_id": new_patient.student_id,
+                "cr_number": new_patient.cr_number,
+            },
             request=request
         )
 
@@ -105,10 +185,28 @@ class PatientService:
         db: Session,
         page: int = 1,
         page_size: int = 20,
-        search: str | None = None
+        search: str | None = None,
+        current_user: User | None = None,
+        doctor_id: int | None = None,
+        student_id: int | None = None
     ) -> tuple[list[Patient], int]:
-        """Search and paginate patients (by code, first/last name, phone)."""
+        """Search and paginate patients scoped by hierarchical user access."""
         query = db.query(Patient).filter(Patient.is_deleted == False)
+
+        if current_user:
+            if current_user.role in ["dentist", "doctor"]:
+                doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
+                c_doc_id = doc.id if doc else (current_user.doctor_id or 1)
+                query = query.filter(Patient.doctor_id == c_doc_id)
+            elif current_user.role == "student":
+                student = db.query(Student).filter((Student.user_id == current_user.id) | (Student.email == current_user.email)).first()
+                c_stu_id = student.id if student else current_user.student_id
+                query = query.filter(Patient.student_id == c_stu_id)
+
+        if doctor_id:
+            query = query.filter(Patient.doctor_id == doctor_id)
+        if student_id:
+            query = query.filter(Patient.student_id == student_id)
 
         if search:
             search_term = f"%{search.strip()}%"
@@ -117,7 +215,8 @@ class PatientService:
                     Patient.patient_code.ilike(search_term),
                     Patient.first_name.ilike(search_term),
                     Patient.last_name.ilike(search_term),
-                    Patient.phone.ilike(search_term)
+                    Patient.phone.ilike(search_term),
+                    Patient.cr_number.ilike(search_term)
                 )
             )
 
@@ -126,14 +225,39 @@ class PatientService:
         return items, total
 
     @staticmethod
-    def get_patient_by_id(db: Session, patient_id: int) -> Patient:
-        """Retrieve patient details or raise 404."""
+    def get_patient_by_id(db: Session, patient_id: int, current_user: User | None = None) -> Patient:
+        """Retrieve patient details with role-based access control."""
         patient = db.query(Patient).filter(Patient.id == patient_id, Patient.is_deleted == False).first()
         if not patient:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "PATIENT_NOT_FOUND", "message": f"Patient with ID {patient_id} does not exist."}
             )
+
+        if current_user and current_user.role != "admin":
+            if current_user.role in ["dentist", "doctor"]:
+                doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
+                c_doc_id = doc.id if doc else (current_user.doctor_id or 1)
+                if patient.doctor_id and patient.doctor_id != c_doc_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={"code": "FORBIDDEN", "message": "You can only view patient records registered under your care."}
+                    )
+            elif current_user.role == "student":
+                student = db.query(Student).filter((Student.user_id == current_user.id) | (Student.email == current_user.email)).first()
+                c_stu_id = student.id if student else current_user.student_id
+                if patient.student_id != c_stu_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={"code": "FORBIDDEN", "message": "You can only view patient records assigned to you."}
+                    )
+            elif current_user.role == "patient":
+                if current_user.patient_id != patient.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={"code": "FORBIDDEN", "message": "Access denied to other patient records."}
+                    )
+
         return patient
 
     @staticmethod
@@ -144,10 +268,48 @@ class PatientService:
         current_user: User,
         request: Request | None = None
     ) -> Patient:
-        """Update patient demographics or medical/dental history."""
-        patient = PatientService.get_patient_by_id(db, patient_id)
+        """Update patient demographics, assignment, disease categories, or clinical history."""
+        patient = PatientService.get_patient_by_id(db, patient_id, current_user=current_user)
 
         update_dict = data.model_dump(exclude_unset=True)
+
+        # Enforce assignment & permission rules
+        if current_user.role in ["dentist", "doctor"]:
+            doc = db.query(Doctor).filter((Doctor.user_id == current_user.id) | (Doctor.email == current_user.email)).first()
+            current_doc_id = doc.id if doc else (current_user.doctor_id or 1)
+
+            # Doctor can assign or reassign patient to one of their registered students
+            if "student_id" in update_dict:
+                target_student_id = update_dict.get("student_id")
+                if target_student_id:
+                    student = db.query(Student).filter(Student.id == target_student_id, Student.doctor_id == current_doc_id).first()
+                    if not student:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"code": "INVALID_STUDENT", "message": "Assigned student does not belong to this doctor."}
+                        )
+                    patient.student_id = student.id
+                else:
+                    patient.student_id = None
+                update_dict.pop("student_id", None)
+
+            update_dict.pop("doctor_id", None)
+
+        elif current_user.role == "student":
+            # Students cannot reassign doctor_id or student_id
+            update_dict.pop("doctor_id", None)
+            update_dict.pop("student_id", None)
+
+        elif current_user.role == "admin":
+            if "student_id" in update_dict and update_dict.get("student_id"):
+                target_doc_id = update_dict.get("doctor_id") or patient.doctor_id or 1
+                student = db.query(Student).filter(Student.id == update_dict["student_id"], Student.doctor_id == target_doc_id).first()
+                if not student:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={"code": "INVALID_STUDENT", "message": "Assigned student does not belong to the responsible doctor."}
+                    )
+
         med_data = update_dict.pop("medical_history", None)
         dent_data = update_dict.pop("dental_history", None)
 

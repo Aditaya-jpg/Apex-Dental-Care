@@ -298,10 +298,10 @@ export default function Reports() {
                         <td className="py-3 px-4 text-right font-bold text-rose-600">{formatINR(inv.balance_due)}</td>
                         <td className="py-3 px-4 text-center">
                           <Link
-                            to="/billing"
+                            to={`/patients/${inv.patient_id}`}
                             className="inline-flex items-center px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded"
                           >
-                            Open Invoice
+                            View Patient
                           </Link>
                         </td>
                       </tr>

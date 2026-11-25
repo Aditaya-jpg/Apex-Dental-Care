@@ -87,22 +87,15 @@ OpenAPI Documentation: `http://localhost:8000/docs` or `http://localhost:8000/re
 
 ---
 
-## 8. Billing, Payments & Invoices
+## 8. Billing & Invoices
 
 | Method | Endpoint | Allowed Roles | Description | Status Code |
 |---|---|---|---|---|
 | `GET` | `/billing/invoices` | Admin, Receptionist | List invoices with status & balance filters | `200 OK` |
 | `POST` | `/billing/invoices` | Admin, Receptionist | Create itemized patient invoice | `201 Created` |
-| `GET` | `/billing/invoices/{id}` | Admin, Receptionist | Get full invoice details, line items, and payments | `200 OK` |
+| `GET` | `/billing/invoices/{id}` | Admin, Receptionist | Get full invoice details and line items | `200 OK` |
 | `GET` | `/billing/invoices/{id}/pdf` | Admin, Receptionist | Stream printable invoice PDF | `200 OK` |
-| `POST` | `/billing/payments` | Admin, Receptionist | Record offline/manual payment (cash, card, UPI) with atomic balance update | `201 Created` |
-| `POST` | `/billing/invoices/{id}/payments/order` | Admin, Receptionist | Create online gateway payment order with idempotency check | `200 OK` |
-| `POST` | `/billing/payments/verify` | Admin, Receptionist | Server-side cryptographic HMAC-SHA256 verification and balance credit | `200 OK` |
-| `POST` | `/billing/webhooks/{provider}` | Public / Gateway | Asynchronous webhook listener with raw payload HMAC verification | `200 OK` |
-| `GET` | `/billing/payments/{id}` | Admin, Receptionist, Dentist | Retrieve payment transaction status and details | `200 OK` |
-| `GET` | `/billing/payments/{id}/receipt` | Admin, Receptionist, Dentist | Stream official stamped Payment Receipt PDF | `200 OK` |
-| `POST` | `/billing/payments/{id}/reconcile` | Admin, Receptionist | Reconcile stuck PENDING payment directly with gateway | `200 OK` |
-| `POST` | `/billing/payments/{id}/refund` | Admin | Process payment refund and recalculate ledger balance | `200 OK` |
+| `GET` | `/billing/my-invoices` | Authenticated | Retrieve patient's clinical invoices | `200 OK` |
 
 ---
 

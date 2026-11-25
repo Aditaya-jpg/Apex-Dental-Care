@@ -28,12 +28,14 @@ from app.routers import (
     billing,
     dashboard,
     dental_chart,
+    doctors,
     documents,
     followups,
     health,
     patients,
     prescriptions,
     reports,
+    students,
     treatments,
     users,
     visits,
@@ -52,6 +54,11 @@ async def lifespan(app: FastAPI):
     # Startup: ensure tables exist
     logger.info(f"Starting {settings.APP_NAME} in {settings.ENVIRONMENT} mode...")
     Base.metadata.create_all(bind=engine)
+    try:
+        from migrate_db import run_migration
+        run_migration()
+    except Exception as e:
+        logger.warning(f"Migration check: {e}")
     logger.info("Database schemas verified.")
     yield
     # Shutdown
@@ -92,6 +99,8 @@ app.add_middleware(
 api_prefix = settings.API_PREFIX # /api/v1
 app.include_router(auth.router, prefix=api_prefix)
 app.include_router(users.router, prefix=api_prefix)
+app.include_router(doctors.router, prefix=api_prefix)
+app.include_router(students.router, prefix=api_prefix)
 app.include_router(patients.router, prefix=api_prefix)
 app.include_router(appointments.router, prefix=api_prefix)
 app.include_router(visits.router, prefix=api_prefix)

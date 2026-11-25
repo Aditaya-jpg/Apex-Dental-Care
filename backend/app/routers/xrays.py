@@ -97,8 +97,8 @@ async def reconstruct_3d_teeth(
     file: Optional[UploadFile] = File(None),
     sample_id: Optional[str] = Form(None),
     patient_id: Optional[int] = Form(None),
-    threshold: float = Form(-0.50),
-    resolution: str = Form("fast"),
+    threshold: float = Form(-0.45),
+    resolution: str = Form("hd"),
     save_to_patient: bool = Form(False),
     current_user: User = Depends(require_roles("dentist", "admin")),
     db: Session = Depends(get_db),
@@ -111,6 +111,9 @@ async def reconstruct_3d_teeth(
     form_data = {
         "threshold": str(threshold),
         "resolution": resolution,
+        "remove_artifacts": "true",
+        "taubin_iterations": "8",
+        "clahe_enhance": "true",
     }
     if sample_id:
         form_data["sample_id"] = sample_id
@@ -272,6 +275,9 @@ def get_patient_xrays(
     db: Session = Depends(get_db),
 ):
     """Retrieve all panoramic X-rays, CBCT scans, and 3D reconstructions for a specific patient."""
+    if current_user.role == "patient":
+        patient_id = current_user.patient_id or 0
+
     docs = (
         db.query(Document)
         .filter(Document.patient_id == patient_id, Document.document_type.in_(["xray", "opg", "cbct"]))

@@ -9,4 +9,16 @@ export const dashboardApi = {
   getAnalytics: (days = 30) => {
     return api.get<DashboardAnalytics>('/dashboard/analytics', { days });
   },
+
+  getAdminDashboard: () => {
+    return api.get<any>('/dashboard/admin');
+  },
+
+  getDoctorDashboard: () => {
+    return api.get<any>('/dashboard/doctor');
+  },
+
+  getStudentDashboard: () => {
+    return api.get<any>('/dashboard/student');
+  },
 };

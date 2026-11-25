@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.database import SessionLocal
 from app.models.appointment import Appointment, AppointmentType
 from app.models.audit import AuditLog
-from app.models.billing import Invoice, InvoiceItem, Payment
+from app.models.billing import Invoice, InvoiceItem
 from app.models.clinical import Visit
 from app.models.dental_chart import (
     FDI_PERMANENT_TEETH,
@@ -36,7 +36,6 @@ def seed_database(db=None):
     # Clear existing if needed
     # (Safe reset)
     db.query(AuditLog).delete()
-    db.query(Payment).delete()
     db.query(InvoiceItem).delete()
     db.query(Invoice).delete()
     db.query(Document).delete()
@@ -251,6 +250,17 @@ def seed_database(db=None):
         db.add(dent_h)
         patient_objs.append(p)
 
+    patient_user = User(
+        email="patient@clinic.com",
+        username="patient",
+        hashed_password=pw_hash,
+        full_name="Aarav Sharma",
+        role="patient",
+        phone="+91 98765 10101",
+        patient_id=patient_objs[0].id,
+        is_active=True
+    )
+    db.add(patient_user)
     db.commit()
 
     # 6. Appointments (Past, Today, Upcoming)
@@ -590,18 +600,6 @@ def seed_database(db=None):
     db.add(ii2)
     db.add(ii3)
 
-    pay1 = Payment(
-        invoice_id=inv1.id,
-        patient_id=patient_objs[0].id,
-        amount=Decimal('4000.00'),
-        payment_method="card",
-        transaction_reference="AUTH-TXN-994821",
-        payment_date=datetime.now(UTC) - timedelta(days=7),
-        notes="Card payment swipe at front desk.",
-        received_by_user_id=rec1_user.id
-    )
-    db.add(pay1)
-
     # Invoice 2: Priya Nair (Paid in full)
     inv2 = Invoice(
         invoice_number="INV-2026-1002",
@@ -626,18 +624,6 @@ def seed_database(db=None):
     db.add(ii4)
     db.add(ii5)
 
-    pay2 = Payment(
-        invoice_id=inv2.id,
-        patient_id=patient_objs[1].id,
-        amount=Decimal('1700.00'),
-        payment_method="upi",
-        transaction_reference="UPI-REF-238491",
-        payment_date=datetime.now(UTC) - timedelta(days=5),
-        notes="Instant mobile payment received.",
-        received_by_user_id=rec1_user.id
-    )
-    db.add(pay2)
-
     # Invoice 3: Ananya Iyer (Paid in full)
     inv3 = Invoice(
         invoice_number="INV-2026-1003",
@@ -660,17 +646,6 @@ def seed_database(db=None):
     ii7 = InvoiceItem(invoice_id=inv3.id, description="Class IV Aesthetic Composite Restoration", unit_price=Decimal('2500.00'), quantity=1, total=Decimal('2500.00'))
     db.add(ii6)
     db.add(ii7)
-
-    pay3 = Payment(
-        invoice_id=inv3.id,
-        patient_id=patient_objs[3].id,
-        amount=Decimal('2500.00'),
-        payment_method="cash",
-        payment_date=datetime.now(UTC) - timedelta(days=2),
-        notes="Cash payment received in full.",
-        received_by_user_id=rec2_user.id
-    )
-    db.add(pay3)
     db.commit()
 
     # 12. Follow-ups
@@ -703,7 +678,6 @@ def seed_database(db=None):
         ("TOOTH_UPDATE", dentist1_user, "ToothCondition", f"{patient_objs[0].id}-16", "Updated tooth 16 to root_canal (severe)"),
         ("PRESCRIPTION_CREATE", dentist1_user, "Prescription", str(rx1.id), "Issued RX-2026-1001 (3 items)"),
         ("INVOICE_CREATE", rec1_user, "Invoice", str(inv1.id), "Generated invoice INV-2026-1001 (₹6,000.00)"),
-        ("PAYMENT_CREATE", rec1_user, "Payment", str(pay1.id), "Recorded ₹4,000.00 card payment"),
     ]
     for action, usr, ent_name, ent_id, detail in audit_samples:
         db.add(AuditLog(

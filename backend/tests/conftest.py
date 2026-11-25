@@ -76,3 +76,9 @@ def receptionist_token(client):
     res = client.post("/api/v1/auth/login", json={"username_or_email": "reception1@clinic.com", "password": "Dental@123"})
     assert res.status_code == 200
     return res.json()["access_token"]
+
+@pytest.fixture
+def patient_token(client):
+    res = client.post("/api/v1/auth/login", json={"username_or_email": "patient@clinic.com", "password": "Dental@123"})
+    assert res.status_code == 200
+    return res.json()["access_token"]

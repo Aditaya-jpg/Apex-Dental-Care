@@ -25,8 +25,12 @@ export const Login: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      await login(usernameOrEmail, password);
-      navigate(from, { replace: true });
+      const loggedInUser = await login(usernameOrEmail, password);
+      if (loggedInUser.role === 'patient') {
+        navigate('/portal/appointments', { replace: true });
+      } else {
+        navigate(from === '/login' || from.startsWith('/portal') ? '/dashboard' : from, { replace: true });
+      }
     } catch (err: any) {
       setError(err.message || 'Authentication failed. Please verify credentials.');
     } finally {
@@ -164,7 +168,7 @@ export const Login: React.FC = () => {
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider text-center mb-3">
               1-Click Demo Personas
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => handleQuickLogin('admin@clinic.com')}
@@ -190,6 +194,15 @@ export const Login: React.FC = () => {
               >
                 <span className="block text-[10px] font-bold text-blue-300 uppercase">Reception</span>
                 <span className="block text-[11px] text-white font-medium truncate">Jessica M.</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('patient@clinic.com')}
+                className="p-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-800/50 text-left transition-all"
+              >
+                <span className="block text-[10px] font-bold text-emerald-300 uppercase">Patient</span>
+                <span className="block text-[11px] text-white font-medium truncate">Aarav S.</span>
               </button>
             </div>
           </div>

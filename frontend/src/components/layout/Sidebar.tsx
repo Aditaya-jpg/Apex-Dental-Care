@@ -14,6 +14,7 @@ import {
   Stethoscope,
   FolderOpen,
   Scan,
+  GraduationCap,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
@@ -26,18 +27,18 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { name: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'dentist', 'receptionist'] },
-  { name: 'Patients', to: '/patients', icon: Users, roles: ['admin', 'dentist', 'receptionist'] },
-  { name: 'Appointments', to: '/appointments', icon: CalendarDays, roles: ['admin', 'dentist', 'receptionist'] },
-  { name: 'Treatments', to: '/treatments', icon: Activity, roles: ['admin', 'dentist'] },
-  { name: 'Prescriptions', to: '/prescriptions', icon: FileSpreadsheet, roles: ['admin', 'dentist'] },
-  { name: 'X-rays', to: '/xrays', icon: Scan, roles: ['admin', 'dentist'] },
-  { name: 'Billing & Invoices', to: '/billing', icon: Receipt, roles: ['admin', 'receptionist'] },
-  { name: 'Follow-ups', to: '/followups', icon: Clock, roles: ['admin', 'dentist', 'receptionist'] },
-  { name: 'Documents', to: '/documents', icon: FolderOpen, roles: ['admin', 'dentist', 'receptionist'] },
-  { name: 'Reports', to: '/reports', icon: BarChart3, roles: ['admin', 'receptionist'] },
+  { name: 'Dashboard', to: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'dentist', 'doctor', 'student', 'receptionist'] },
+  { name: 'Doctors', to: '/doctors', icon: Stethoscope, roles: ['admin'] },
+  { name: 'Students', to: '/students', icon: GraduationCap, roles: ['admin', 'dentist', 'doctor'] },
+  { name: 'Patients', to: '/patients', icon: Users, roles: ['admin', 'dentist', 'doctor', 'student', 'receptionist'] },
+  { name: 'Appointments', to: '/appointments', icon: CalendarDays, roles: ['admin', 'dentist', 'doctor', 'student', 'receptionist'] },
+  { name: 'Treatments', to: '/treatments', icon: Activity, roles: ['admin', 'dentist', 'doctor'] },
+  { name: 'Prescriptions', to: '/prescriptions', icon: FileSpreadsheet, roles: ['admin', 'dentist', 'doctor'] },
+  { name: 'X-rays & 3D', to: '/xrays', icon: Scan, roles: ['admin', 'dentist', 'doctor', 'student'] },
+  { name: 'Follow-ups', to: '/followups', icon: Clock, roles: ['admin', 'dentist', 'doctor', 'receptionist'] },
+  { name: 'Documents', to: '/documents', icon: FolderOpen, roles: ['admin', 'dentist', 'doctor', 'student', 'receptionist'] },
   { name: 'Audit Logs', to: '/audit-logs', icon: ShieldCheck, roles: ['admin'] },
-  { name: 'Staff & Users', to: '/users', icon: UserCog, roles: ['admin'] },
+  { name: 'Staff Accounts', to: '/users', icon: UserCog, roles: ['admin'] },
 ];
 
 export const Sidebar: React.FC = () => {
