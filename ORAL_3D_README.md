@@ -1,4 +1,4 @@
-# Oral-3D: Deep Learning 3D Teeth & Oral Cavity Reconstruction in Apex Dental Care
+# Oral-3D: Deep Learning 3D Teeth & Oral Cavity Reconstruction in PGI Dental Management System
 
 [![AAAI 2021](https://img.shields.io/badge/AAAI-2021-blue.svg)](https://ojs.aaai.org/index.php/AAAI/article/view/16135)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C.svg?logo=pytorch)](https://pytorch.org)
@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This module integrates the state-of-the-art **Oral-3D** deep learning framework into **Apex Dental Care**, providing dental clinicians and oral surgeons with real-time 3D teeth, jawbone, and arch structure reconstruction directly from standard 2D panoramic radiographs (OPGs).
+This module integrates the state-of-the-art **Oral-3D** deep learning framework into the **PGI Dental Management System** (Oral Health Sciences Centre, PGIMER Chandigarh), providing dental clinicians and oral surgeons with real-time 3D teeth, jawbone, and arch structure reconstruction directly from standard 2D panoramic radiographs (OPGs).
 
 Clinicians access this capability within the Doctor Portal under the dedicated **X-rays** suite and inside every patient's longitudinal record under the **X-rays (3D)** tab.
 
@@ -65,14 +65,14 @@ flowchart LR
 ## 🏥 Doctor Portal Capabilities (`X-rays`)
 
 ### 1. Dedicated Doctor Navigation
-Accessible to dentists and administrators from the main sidebar:
+Accessible to doctors, assigned students, and administrators from the main sidebar:
 - **Navigation Name:** `X-rays` (Icon: `Scan`)
 - **Route:** `/xrays`
-- **Role Permissions:** `dentist`, `admin`
+- **Role Permissions:** `doctor`, `admin`, `student` (scoped via `verify_patient_access`)
 
 ### 2. Clinical Diagnostic Studio Features
 - **Patient Selector:**
-  Directly associate the 3D reconstruction with any patient in the clinic database (search by patient name or code `PAT-2026-xxxx`), or evaluate independent diagnostic scans.
+  Directly associate the 3D reconstruction with any authorized patient in the clinic database (search by patient name, CR Number, or code `PAT-xxxx`), or evaluate independent diagnostic scans.
 - **Interactive Three.js WebGL Viewport:**
   - OrbitControls (smooth damping, rotate, pan, zoom, reset view)
   - 5 Diagnostic Medical Shaders:
@@ -123,12 +123,12 @@ Mounted under `/api/v1/xrays`:
 
 | Method | Endpoint | Description | Role Required |
 |---|---|---|---|
-| `GET` | `/api/v1/xrays/status` | Connectivity & neural model status of Oral-3D engine | `dentist`, `admin` |
+| `GET` | `/api/v1/xrays/status` | Connectivity & neural model status of Oral-3D engine | `doctor`, `admin`, `student` |
 | `GET` | `/api/v1/xrays/samples` | Clinical sample panoramic radiograph presets | Authenticated |
-| `POST` | `/api/v1/xrays/reconstruct` | Ingests radiograph, executes inference, returns 3D mesh & MPR | `dentist`, `admin` |
-| `GET` | `/api/v1/xrays/slice` | Streams dynamic cross-section image along Axial/Coronal/Sagittal | `dentist`, `admin` |
-| `POST` | `/api/v1/xrays/save-to-patient`| Persists 3D reconstruction & metrics into patient document record | `dentist`, `admin` |
-| `GET` | `/api/v1/xrays/patient/{id}` | Retrieves all X-rays & 3D models on file for a patient | Authenticated |
+| `POST` | `/api/v1/xrays/reconstruct` | Ingests radiograph, executes inference, returns 3D mesh & MPR | `doctor`, `admin`, `student` |
+| `GET` | `/api/v1/xrays/slice` | Streams dynamic cross-section image along Axial/Coronal/Sagittal | `doctor`, `admin`, `student` |
+| `POST` | `/api/v1/xrays/save-to-patient`| Persists 3D reconstruction & metrics into patient's AES-256-GCM vault | `doctor`, `admin`, `student` (scoped) |
+| `GET` | `/api/v1/xrays/patient/{id}` | Retrieves all X-rays & 3D models on file (date-wise category grouping) | `doctor`, `admin`, `student` (scoped) |
 
 ---
 
@@ -141,8 +141,8 @@ start.bat
 ```
 This automatically launches:
 1. **Oral-3D AI Reconstruction Engine:** `http://127.0.0.1:8001` (FastAPI + PyTorch)
-2. **Apex Dental Backend:** `http://127.0.0.1:8000` (FastAPI + SQLAlchemy)
-3. **Apex Dental Frontend:** `http://localhost:3000` (Vite + React + Three.js)
+2. **PGI Dental Backend:** `http://127.0.0.1:8000` (FastAPI + SQLAlchemy)
+3. **PGI Dental Frontend:** `http://localhost:3000` (Vite + React + Three.js)
 
 ### Manual Service Startup
 1. **Start Oral-3D Engine (Port 8001):**
@@ -150,19 +150,19 @@ This automatically launches:
    python app.py --port 8001
    ```
 
-2. **Start Apex Dental Backend (Port 8000):**
+2. **Start PGI Dental Backend (Port 8000):**
    ```bash
-   cd Apex-Dental-Care-main/backend
-   venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
+   cd backend
+   .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
    ```
 
 3. **Start Frontend (Port 3000):**
    ```bash
-   cd Apex-Dental-Care-main/frontend
+   cd frontend
    npm run dev
    ```
 
 4. **Login as Clinician:**
-   - **Email:** `dr.chen@clinic.com`
+   - **Email:** `dr.sharma@pgi.edu.in`
    - **Password:** `Dental@123`
    - Click **X-rays** in the sidebar.

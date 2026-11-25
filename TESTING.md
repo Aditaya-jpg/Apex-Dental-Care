@@ -1,16 +1,16 @@
-# Apex Dental Care - Quality Assurance & Testing Strategy
+# PGI Dental Management System - Quality Assurance & Testing Strategy
 
-Apex Dental Care employs a comprehensive, multi-tiered testing strategy covering unit logic, database integrations, security vulnerabilities, component rendering, and end-to-end browser workflows.
+The **PGI Dental Management System** employs a comprehensive, multi-tiered testing strategy covering unit logic, 8-table database invariants, AES-256-GCM vault security, RBAC & instant revocation, HarfBuzz Indic PDFs, component rendering, and end-to-end browser workflows.
 
 ```
        /\
       /  \     End-to-End Tests (Playwright)
-     /----\    4 Complete Critical Clinical Workflows
+     /----\    Full Role, Portal & Responsive Workflows
     /      \
-   /--------\   Integration & Security Tests (Pytest + HTTPX)
-  /          \  RBAC, IDOR, Injection, Double-Booking, Auth
+   /--------\   Integration & Security Tests (41 Pytest Cases + HTTPX)
+  /          \  8-Table Check, AES-GCM Vault, RBAC, Revocation, i18n PDFs
  /------------\
-/   Unit Tests \ Unit Logic (Bcrypt, Decimal Math, FDI 11-48, ReportLab)
+/   Unit Tests \ Unit & Component Tests (Vitest 8 Cases + tsc + vite build)
 ----------------
 ```
 
@@ -20,41 +20,36 @@ Apex Dental Care employs a comprehensive, multi-tiered testing strategy covering
 
 | Test Suite | Framework | Scope / Components Tested |
 |---|---|---|
-| **Backend Unit & Integration** | Pytest + HTTPX | Authentication, token rotation, patient CRUD, appointment conflict detection, tooth condition history, treatment plans, prescriptions, invoices, and payments. |
-| **Backend Security & RBAC** | Pytest | Role boundary enforcement, receptionist denied clinical edits, dentist denied admin operations, IDOR attempts, SQL injection payloads, XSS rejection, path traversal in uploads. |
-| **Frontend Unit & Components** | Vitest + React Testing Library | FDI Dental Chart 32 permanent teeth rendering, color mapping, quadrant layout, ProtectedRoute role gates, AuthContext lifecycle. |
-| **End-to-End (E2E)** | Playwright | 4 complete user workflows spanning Receptionist, Dentist, and Administrator personas. |
+| **Backend Unit & Integration** | Pytest + HTTPX (`41 tests`) | Locked 8-table schema, zero billing/reports check, auth & refresh rotation, AES-256-GCM CBCT vault, student isolation & instant JWT revocation, receptionist attendance-only, patient portal privacy, CR registration, disease segregation, date-wise X-rays, tracker/enquiries, perio/surgical/misc/notices, EN/HI/PA HarfBuzz PDFs, smart calendar & `.ics`, recalls, preventive care, social webhooks. |
+| **Backend Security & RBAC** | Pytest | Role boundary enforcement, receptionist denied clinical edits, doctor denied admin operations, student cross-patient 403, SQL injection payloads, path traversal & magic-byte upload checks. |
+| **Frontend Unit & Components** | Vitest + React Testing Library (`8 tests`) | `FDIToothChart` 32 permanent teeth rendering & condition updates; `RBAC` & `ProtectedRoute` role gates across PGI roles. |
+| **End-to-End (E2E)** | Playwright | Browser verification across Receptionist, Doctor, Admin-Doctor, Student, Admin, and Patient Portal workflows + `1440px`/`768px`/`390px` viewports. |
 
 ---
 
 ## 2. Executing Backend Tests
 
-The backend test suite executes 29 comprehensive test cases against an in-memory test database populated with identical schema migrations and seed fixtures.
+The backend test suite executes **41 comprehensive test cases** against the locked 8-table schema and seed fixtures.
 
 ```bash
 cd backend
-venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Run full test suite with verbose output
-pytest -v
+.venv/bin/pytest -v
 
 # Run with test coverage report
-pytest --cov=app --cov-report=term-missing
+.venv/bin/pytest --cov=app --cov-report=term-missing
 ```
 
 ### Key Security & Clinical Test Cases Tested:
-- `test_login_success_and_jwt_issuance`: Verifies Argon2/Bcrypt password validation and JWT token claims.
-- `test_failed_login_and_account_lockout`: Confirms account locking after 5 consecutive bad passwords.
-- `test_appointment_conflict_detection`: Ensures two patients cannot book the same dentist during overlapping hours.
-- `test_fdi_permanent_teeth_initialization`: Verifies all 32 teeth (11-48) are generated with valid FDI numbering.
-- `test_fdi_invalid_tooth_number`: Rejects out-of-range teeth (e.g. Tooth 99) with HTTP 422.
-- `test_tooth_condition_history_preservation`: Ensures updating a tooth preserves complete historical logs.
-- `test_treatment_plan_calculations`: Confirms exact monetary sums without floating-point errors.
-- `test_receptionist_cannot_create_prescription`: Confirms HTTP 403 Forbidden when front-desk attempts clinical prescribing.
-- `test_receptionist_cannot_modify_dental_chart`: Confirms HTTP 403 when front-desk attempts tooth condition modification.
-- `test_dentist_cannot_manage_users`: Confirms HTTP 403 when clinicians attempt administrative user creation.
-- `test_sql_injection_payloads_in_search`: Ensures malicious SQL `' OR '1'='1` cannot bypass parameterized queries.
-- `test_path_traversal_prevention_in_uploads`: Verifies filenames like `../../etc/passwd` are safely renamed to UUIDs.
+- `test_strictly_8_tables_and_sqlite_foreign_keys` & `test_no_billing_or_reports_endpoints`: Enforces locked 8-table schema and zero billing routes.
+- `test_aes256_gcm_chunked_vault_cbct_and_magic_validation`: Validates `PGIV1` chunked encryption, CBCT support, and magic-byte rejection.
+- `test_student_flexible_pool_isolation_and_instant_revocation` & `test_student_revoke_endpoint`: Confirms unassigned pool support, cross-student isolation, and immediate JWT invalidation via `token_version`.
+- `test_receptionist_attendance_only` & `test_patient_portal_privacy_and_opt_in_sharing`: Confirms strict role isolation.
+- `test_fdi_permanent_teeth_initialization` & `test_fdi_invalid_tooth_number`: Verifies 32 FDI teeth (`11–48`) and 422 rejection of invalid tooth numbers.
+- `test_phase4_visits_perio_surgical_misc_notices_and_media` & `test_phase4_multilingual_prescriptions_instructions_and_harfbuzz_pdfs`: Verifies 6-site Perio, Surgical Logs, and EN/HI/PA HarfBuzz PDF generation.
+- `test_phase5_calendar_ics_notifications_recalls_preventive_and_social`: Verifies Smart Calendar, `.ics`, `PGIDNT` notifications, recalls, preventive care, and social leads.
 
 ---
 
@@ -90,8 +85,8 @@ npx playwright test
 npx playwright show-report
 ```
 
-### The 4 Workflows Verified:
-1. **Workflow 1 (Receptionist):** Login → Patient Registration → Schedule Appointment.
-2. **Workflow 2 (Dentist):** Login → Examination → FDI Dental Chart Update → Treatment Plan → Prescription PDF.
-3. **Workflow 3 (Receptionist):** Invoice Inspection → Record Payment → Verify Balance Reduction.
-4. **Workflow 4 (Administrator):** Login → Centralized Audit Logs Review → Staff & User Management.
+### Key Workflows Verified:
+1. **Workflow 1 (`workflow_1_receptionist_booking.spec.ts`):** Receptionist login → lands on `/attendance` → sidebar isolation & `/patients` blocked.
+2. **Workflow 2 (`workflow_2_dentist_clinical.spec.ts`):** Doctor login → Patient Dossier → FDI Dental Chart & Perio Chart → Treatment Plans & Surgical Logs → Multilingual Prescriptions.
+3. **Workflow 4 (`workflow_4_admin_audit.spec.ts`):** Admin login → Audit Logs → PGI Staff & User Accounts.
+4. **Full Multi-Role & Portal Live Suite:** Verified across Admin, Admin-Doctor, Doctor, Student isolation, Receptionist, Patient Portal (Appointments / Prescriptions & Care Instructions / Shared Records), and `1440px` / `768px` / `390px` viewports.

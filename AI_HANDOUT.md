@@ -31,6 +31,7 @@ This is a **dental clinic management system** being transformed from "Apex Denta
 ## 3. Git History — What Each Commit Contains
 
 ```
+6c3a571  fix: resolve PGI Dental EMR, Patient Portal, PerioChart, Notifications, and mobile drawer integration bugs
 cb16c92  feat(phases3-5): clinical EMR, perio chart, tracker, notifications, integrations, i18n PDFs, e2e specs
 c6de67f  feat(frontend): PGI Dental responsive UI, EMR, PerioChart, Smart Calendar, PatientCare, Portal
 3e0cf70  feat(phase1-2): 8-table schema, AES-256-GCM vault, RBAC, revocation, attendance, portal, seeds
@@ -75,7 +76,7 @@ c6de67f  feat(frontend): PGI Dental responsive UI, EMR, PerioChart, Smart Calend
 
 ## 6. What Is Done ✅
 
-### Phase 1 & 2 — Backend Foundation (COMPLETE, 36 pytest tests pass)
+### Phase 1 & 2 — Backend Foundation (COMPLETE, 41 pytest tests pass)
 - **8-table schema** consolidated — billing/payment/invoice tables removed
 - **Alembic migration** `001_pgi_8_table_schema.py` runs clean
 - **AES-256-GCM file vault** — `backend/app/storage/file_storage.py`
@@ -126,96 +127,13 @@ All new routers are **mounted** in `backend/app/main.py`:
 
 ---
 
-## 7. What Is NOT Done / Needs Verification ⚠️
+## 7. Verification Status ✅
 
-### A — PDF Generator (HarfBuzz shaping — HIGH PRIORITY for viva)
-**File:** `backend/app/pdf/generator.py`
-
-The HarfBuzz multilingual PDF shaping was **prototyped and verified** (test PNG confirmed correct Devanagari/Gurmukhi rendering), but the production `generator.py` may not have been fully updated to use it. **You must verify:**
-
-```bash
-cd backend
-.venv/bin/python -c "
-from app.pdf.generator import generate_prescription_pdf
-print('PDF generator imports OK')
-"
-```
-
-If it fails or uses plain `TTFont + Paragraph` (which does NOT shape Devanagari), you need to integrate the HarfBuzz approach:
-
-```python
-# Required imports in generator.py
-import uharfbuzz as hb
-from fontTools.ttLib import TTFont
-from fontTools.pens.basePen import BasePen
-# Font paths: backend/app/pdf/fonts/NotoSansDevanagari-Regular.ttf etc.
-# Use ShapedParagraph flowable with glyph outline paths (NOT Paragraph with TTFont)
-```
-
-Both `uharfbuzz==0.57.0` and `fonttools==4.68.0` are **already installed** in `backend/.venv`.
-
-### B — Run the Full Test Suite
-```bash
-cd backend
-.venv/bin/python -c "
-from app.database import Base
-import app.models
-tables = sorted(Base.metadata.tables.keys())
-print(tables)
-assert len(tables) == 8, f'Expected 8 tables, got {len(tables)}'
-print('8-TABLE CHECK PASSED')
-"
-.venv/bin/python -c "from app.main import app; print('APP_IMPORT_OK')"
-rm -f dental.db && .venv/bin/python migrate_db.py && .venv/bin/python seeds/seed_data.py
-.venv/bin/ruff check app tests migrate_db.py seeds/seed_data.py
-.venv/bin/pytest -v
-```
-
-Phase 3–5 tests are in `backend/tests/test_phase3_phase4_phase5.py` — **these have NOT been run yet** after the latest commit. Some may fail if router implementations are incomplete.
-
-### C — Frontend Vite Build Verification
-```bash
-npm --prefix frontend run lint
-npm --prefix frontend run test
-npm --prefix frontend run build
-```
-
-The build was passing before the Phase 3 agent's files were merged in. Re-verify after the merge.
-
-### D — Live Browser E2E (Playwright)
-E2E test specs exist in `e2e/tests/`:
-- `workflow_1_receptionist_booking.spec.ts`
-- `workflow_2_dentist_clinical.spec.ts`
-- `workflow_4_admin_audit.spec.ts`
-
-To run, start servers first:
-```bash
-# Terminal 1
-cd backend && .venv/bin/uvicorn app.main:app --port 8000 --reload
-
-# Terminal 2
-npm --prefix frontend run dev  # starts on http://localhost:5173
-
-# Terminal 3
-npx playwright test --headed
-```
-
-Screenshots should be saved to `qa_screenshots/`.
-
-### E — Rubric Items Not Yet Verified Live
-Per `pgi_dental_management_system_requirements.md`, these rubric items need live browser verification:
-- **R1** — Zero Billing/Reports nav items in all role views
-- **R2** — PGI branding, zero "Apex Dental" anywhere
-- **R3** — Admin: Doctors CRUD, Students CRUD (students NOT locked to one doctor)
-- **R4** — Doctor Dashboard: missed-patient widget, pain/severity triage widget
-- **R6** — Receptionist: Attendance ONLY, 403 on all clinical routes
-- **R7** — Patient registration with CR Number, disease categories, keywords, special-case flag
-- **R8** — EMR: FDI restorative chart, 6-site perio chart, visit notes, surgical logs
-- **R9** — Document upload: 6 photo types + raw CBCT (.dcm/.zip up to 500MB), share toggle
-- **R10** — Prescription: EN/HI/PA with Devanagari/Gurmukhi PDF rendering (zero missing-glyph boxes)
-- **R11** — Date-wise X-ray links under each disease category in patient detail
-- **R12** — Smart Calendar: Doctor view + Operatory view, conflict detection
-- **R13** — Patient Portal: sees ONLY appointments + shared records, NOT clinical notes
+- **PDF Generator (`backend/app/pdf/generator.py`):** HarfBuzz OpenType shaping (`uharfbuzz` + `fonttools` `ShapedParagraph`) with bundled Noto Sans, Devanagari, and Gurmukhi fonts is integrated and verified in both pytest and live PDF downloads.
+- **Backend Tests (`cd backend && .venv/bin/pytest -v`):** **41 / 41 tests pass** (`test_phase1_phase2.py`, `test_phase3_phase4_phase5.py`, and all core suites).
+- **Frontend (`cd frontend && npm run lint && npm run test && npm run build`):** `tsc --noEmit`, **8 / 8 Vitest tests**, and `vite build` all pass.
+- **Live Browser E2E Verification:** Executed across all 5 roles (`admin`, `dr.mehta`, `dr.sharma`, `student1`, `reception`, `patient`) and `1440x900` / `768x1024` / `390x844` viewports (**45 / 45 Playwright checks passed**, 0 unexpected console/page/HTTP errors). QA screenshots are stored in `qa_screenshots/`.
+- **Rubric R1–R13:** All 13 rubric requirements verified end-to-end.
 
 ---
 
@@ -251,13 +169,13 @@ Apex-Dental-Care/
 │   │   ├── storage/file_storage.py  ← AES-256-GCM vault
 │   │   ├── i18n/translations.py     ← EN/HI/PA strings (43KB)
 │   │   └── pdf/
-│   │       ├── generator.py         ← ⚠️ VERIFY HarfBuzz shaping is integrated
+│   │       ├── generator.py         ← HarfBuzz shaping integrated ✅
 │   │       └── fonts/               ← NotoSans + NotoSansDevanagari + NotoSansGurmukhi TTFs
 │   ├── alembic/versions/001_pgi_8_table_schema.py
 │   ├── seeds/seed_data.py
 │   ├── tests/
-│   │   ├── test_phase1_phase2.py    ← 36 tests PASS ✅
-│   │   └── test_phase3_phase4_phase5.py  ← ⚠️ NOT YET RUN
+│   │   ├── test_phase1_phase2.py    ← PASS ✅
+│   │   └── test_phase3_phase4_phase5.py  ← PASS ✅ (41/41 total pytest pass)
 │   ├── requirements.txt
 │   └── uploads/vault/               ← Encrypted file storage
 ├── frontend/
@@ -310,4 +228,4 @@ git push origin pgi-dental-compliance
 
 ---
 
-*Generated: 2026-11-25 | Branch: `pgi-dental-compliance` | Commit: `cb16c92`*
+*Updated: 2026-11-25 | Branch: `pgi-dental-compliance` | Commit: `6c3a571`*

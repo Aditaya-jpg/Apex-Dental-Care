@@ -1,18 +1,18 @@
-# Apex Dental Care - Security Architecture & Threat Model
+# PGI Dental Management System - Security Architecture & Threat Model
 
 ## 1. Overview & Threat Model
 
 Patient health information (PHI) and clinical records require rigorous, defense-in-depth protection. The security model adheres to HIPAA Security Rule guidelines and OWASP Top 10 recommendations.
 
-| Threat Category | Potential Risk | Mitigation in Apex Dental Care |
+| Threat Category | Potential Risk | Mitigation in PGI Dental Management System |
 |---|---|---|
 | **Injection (SQLi)** | Malicious SQL payloads in searches | SQLAlchemy 2.0 parameterized queries exclusively. Zero raw SQL string concatenation. |
-| **Broken Access Control** | Receptionist updating diagnosis or patient accessing another patient's records | Backend-enforced RBAC dependencies (`require_roles`). IDOR prevention checking patient context. |
-| **Authentication Failures** | Brute-force attacks, token forgery | Bcrypt password hashing, short-lived JWT access tokens (30m), single-use refresh token rotation with SHA-256 storage, account lockout after 5 consecutive failed logins. |
-| **Cryptographic Failures** | Data leakage over unencrypted channels | HTTPS enforcement, TLS 1.3 in production, secure HTTP-only cookies, no sensitive plaintext in logs. |
+| **Broken Access Control / IDOR** | Student viewing another trainee's patient, Receptionist opening EMR, or Patient reading internal notes | Backend-enforced `require_roles` and `verify_patient_access` dependencies. Patient Portal isolated strictly to `/api/v1/patient-portal/*`. |
+| **Authentication & Revocation** | Brute-force attacks, revoked trainee still holding an unexpired JWT | Bcrypt password hashing, short-lived JWT access tokens, refresh token rotation, account lockout after 5 failed logins, and `token_version` + `Student.revoked_at` instant JWT invalidation. |
+| **Cryptographic Failures** | Data leakage on disk or over unencrypted channels | AES-256-GCM (`PGIV1`) encrypted file vault (`file_storage.py`), TLS in production, no sensitive plaintext in logs. |
 | **Security Misconfiguration** | Stack trace leaks, default credentials | Custom exception handlers returning uniform sanitized JSON errors. Production config validation at startup. |
-| **Vulnerable & Outdated Components** | Vulnerabilities in third-party libraries | Automated CI dependency auditing, pinning locked versions in `requirements.txt` and `package-lock.json`. |
-| **Path Traversal / Malicious Uploads** | Overwriting server files via uploaded X-rays | Extension and MIME-type verification, server-generated UUID filenames, files stored strictly outside web root. |
+| **Vulnerable & Outdated Components** | Vulnerabilities in third-party libraries | Automated dependency auditing and pinned versions in `requirements.txt` and `package-lock.json`. |
+| **Path Traversal / Malicious Uploads** | Overwriting server files via uploaded X-rays/CBCT | Extension allowlist/blocklist, magic-byte inspection, UUIDv4 vault keys, files stored encrypted outside web root. |
 
 ---
 
@@ -20,20 +20,15 @@ Patient health information (PHI) and clinical records require rigorous, defense-
 
 Permissions are strictly enforced on backend endpoints regardless of client interface state:
 
-| Resource / Action | Administrator | Dentist | Receptionist | Patient (Future Portal) |
-|---|:---:|:---:|:---:|:---:|
-| **Patient Registration** | ✅ Create / Read / Update | ✅ Read | ✅ Create / Read / Update | ❌ |
-| **Patient Demographics** | ✅ Full Access | ✅ Full Access | ✅ View / Edit Basic | ✅ View Self Only |
-| **Medical & Dental Alerts** | ✅ Full Access | ✅ Full Access | ✅ View Warnings | ✅ View Self Only |
-| **Schedule Appointment** | ✅ Full Access | ✅ View Schedule | ✅ Create / Reschedule / Cancel | ❌ |
-| **Clinical Examination & Vitals** | ✅ View | ✅ Create / Edit | ❌ Denied (403) | ❌ Denied (403) |
-| **FDI Tooth Chart (11–48)** | ✅ View History | ✅ Update Condition | ❌ Denied (403) | ❌ Denied (403) |
-| **Treatment Plans** | ✅ View | ✅ Create / Update Item | ❌ Denied (403) | ❌ Denied (403) |
-| **Prescriptions & PDF** | ✅ View / Download | ✅ Create / Download | ❌ Denied (403) | ✅ Download Self Only |
-| **Upload X-Rays / Documents** | ✅ Upload / Download | ✅ Upload / Download | ✅ Upload / Download | ❌ Denied (403) |
-| **Invoices & Billing** | ✅ Full Access | ✅ View | ✅ Create / Add Payments | ✅ View Self Only |
-| **Audit Logs Inspection** | ✅ Full Access | ❌ Denied (403) | ❌ Denied (403) | ❌ Denied (403) |
-| **User & Staff Management** | ✅ Full Access | ❌ Denied (403) | ❌ Denied (403) | ❌ Denied (403) |
+| Resource / Action | Admin / Admin-Doctor | Doctor | Student | Receptionist | Patient (Portal) |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Manage Doctors / Students / Users** | ✅ Full Access | ❌ Denied (403) | ❌ Denied (403) | ❌ Denied (403) | ❌ Denied (403) |
+| **Patient Directory & Registration** | ✅ All Branch | ✅ All Branch | ✅ Assigned Only | ❌ Denied (403) | ❌ Denied (403) |
+| **Attendance & Walk-In Check-In** | ✅ Full Access | ✅ Full Access | ❌ | ✅ Attendance Only | ❌ Denied (403) |
+| **Clinical EMR (FDI / Perio / Visits / Surgical)** | ✅ Full Access | ✅ Full Access | ✅ Assigned Only | ❌ Denied (403) | ❌ Denied (403) |
+| **Prescriptions & HarfBuzz PDF** | ✅ Create / Download | ✅ Create / Download | ✅ Assigned Only | ❌ Denied (403) | ✅ Self Visible Only |
+| **Encrypted X-Rays / Media / CBCT** | ✅ Upload / Download | ✅ Upload / Download | ✅ Assigned Only | ❌ Denied (403) | ✅ Opt-in Shared Only |
+| **Audit Logs Inspection** | ✅ Full Access | ❌ Denied (403) | ❌ Denied (403) | ❌ Denied (403) | ❌ Denied (403) |
 
 ---
 
@@ -64,46 +59,34 @@ sequenceDiagram
 ```
 
 ### Key Security Safeguards
-1. **Token Invalidation:** When a refresh token is exchanged or revoked (`POST /auth/logout`), the token's hash is immediately marked `is_revoked = True` in the database.
-2. **Account Lockout:** 5 consecutive failed login attempts trigger an automated 15-minute account lock (`locked_until`).
-3. **No Credential Logging:** Passwords, JWT tokens, and refresh tokens are strictly scrubbed prior to audit trail recording.
+1. **Instant Student & Session Revocation:** Removing a student (`DELETE /students/{id}`) increments `token_version` and sets `revoked_at`, invalidating active JWTs immediately in `get_current_user`. Refresh token revocation (`POST /auth/logout`) marks tokens revoked.
+2. **Account Lockout:** 5 consecutive failed login attempts trigger an automated account lock (`locked_until`).
+3. **No Credential Logging:** Passwords, JWT tokens, and refresh tokens are strictly scrubbed prior to audit trail recording in `care_and_system_logs`.
 
 ---
 
-## 4. Secure File Storage & Download Pipeline
+## 4. AES-256-GCM Encrypted File Vault (`PGIV1`)
 
-Uploaded clinical documents and panoramic radiographs are protected through a 6-stage verification pipeline:
+Uploaded clinical documents, photos, and CBCT radiographs are protected through a multi-stage verification and encryption pipeline in `backend/app/storage/file_storage.py`:
 
-1. **Size Verification:** Uploads exceeding `15 MB` (`15,728,640` bytes) are rejected with `413 Payload Too Large`.
-2. **Extension Allowlist:** Only verified extensions are permitted (`.jpg`, `.jpeg`, `.png`, `.pdf`, `.dcm`, `.tiff`).
-3. **Magic Byte / MIME Verification:** The file's MIME type is inspected to prevent executable masquerading.
-4. **Server-Side File Renaming:** Files are renamed to randomly generated UUIDv4 filenames (e.g. `d3b07384-d113-4632-9c93-4a6c4293fe2a.png`) to prevent path traversal (`../`) and local file inclusion (LFI).
-5. **Storage Outside Web Root:** Files are stored in an isolated storage directory (`./uploads/`) that is never directly served as a static route.
-6. **Authorized Streaming:** The download endpoint (`GET /documents/{id}/download`) authenticates the user, verifies role permissions, logs an audit record, and streams the file securely with `FileResponse`.
+1. **Size Verification:** Standard clinical documents/photos allow up to `25 MB`; 3D CBCT scans (`.dcm`, `.zip`, `.nii`, `.nii.gz`) allow up to `500 MB`.
+2. **Extension Allowlist & Blocklist:** Permits verified clinical formats (`.jpg`, `.jpeg`, `.png`, `.webp`, `.pdf`, `.dcm`, `.tiff`, `.zip`, `.nii`, `.nii.gz`) and blocks executables/scripts (`.exe`, `.sh`, `.js`, `.html`, `.svg`, etc.).
+3. **Magic-Byte / MIME Verification:** File header bytes are inspected to prevent extension spoofing.
+4. **AES-256-GCM Chunked Encryption:** Files are encrypted at rest using `PGIV1` header + 12-byte base nonce + `1 MB` chunks, with SHA-256 integrity checksums.
+5. **Storage Outside Web Root:** Encrypted `.enc` files live under `backend/uploads/vault/{patient_id}/{uuid}.enc` and are never served statically.
+6. **Authorized Streaming:** `GET /documents/{id}/download` verifies `verify_patient_access` (or `is_shared_with_patient == True` for Patient Portal), logs an audit record, and streams decrypted chunks.
 
 ---
 
-## 5. Payment Gateway Security Architecture
+## 5. Patient Portal Privacy Isolation
 
-Online financial transactions follow a defense-in-depth model where the application database is the sole authoritative ledger:
-
-1. **Cryptographic Server-Side Verification:**
-   - Client-reported payment status is **never trusted**.
-   - Razorpay payment signatures are validated using constant-time comparison (`hmac.compare_digest`) computing `HMAC_SHA256(order_id + "|" + payment_id, key_secret)`.
-2. **Raw Body Webhook Authentication:**
-   - Webhook payloads are verified against `PAYMENT_WEBHOOK_SECRET` using the exact raw HTTP request body bytes before JSON deserialization. Unsigned or tampered webhooks fail with HTTP 400.
-3. **Idempotency & Replay Attack Defense:**
-   - Gateway order creation is deduplicated via unique `idempotency_key`.
-   - Webhook deliveries are tracked in `payment_webhook_events` with unique event ID constraints. Duplicate webhooks return `200 OK` without re-crediting invoices.
-4. **Race Conditions & Overpayment Prevention:**
-   - Database operations use atomic transactions with row-level locking (`with_for_update`).
-   - Overpayment or negative balance requests are blocked by server-side Decimal checks.
-5. **Credential & Secret Isolation:**
-   - `PAYMENT_KEY_SECRET` and `PAYMENT_WEBHOOK_SECRET` are stored exclusively in backend environment variables.
-   - Secrets are masked from all audit logs and are never exposed to frontend bundles.
+Patient users (`role="patient"`) can access only `/api/v1/patient-portal/*`:
+1. **Appointments:** Returns only the patient's own slots, operatory, doctor display name, pre-appointment hints, and calendar exports.
+2. **Prescriptions & Care Instructions:** Returns only patient-visible prescriptions and notification/recall care alerts.
+3. **Shared Records:** Returns **only** explicit doctor-issued notices and documents with `is_shared_with_patient == True`. Internal visits, FDI/Perio charts, surgical logs, and unshared X-rays are strictly excluded.
 
 ---
 
 ## 6. Security Vulnerability Reporting
 
-To report a suspected security vulnerability, please contact our security team at `security@apexdental.com`. We respond within 24 hours and practice coordinated disclosure.
+To report a suspected security vulnerability, please contact the PGI Dental System administrators. We respond promptly and practice coordinated disclosure.

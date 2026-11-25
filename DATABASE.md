@@ -1,89 +1,75 @@
-# Apex Dental Care - Database Schema & Persistence Guide
+# PGI Dental Management System - Database Schema & Persistence Guide
 
-## 1. Entity Relationship Diagram
+## 1. Entity Relationship Diagram (Locked 8-Table Schema)
+
+The database is strictly locked to **8 tables** portable across SQLite (local dev/testing) and MySQL 8.0 (production). All billing/invoice/payment tables were removed, and clinical sub-records are stored in typed JSON columns.
 
 ```mermaid
 erDiagram
-    User ||--o{ RefreshToken : has
-    User ||--o| Dentist : has_profile
-    User ||--o{ Appointment : scheduled_for
-    User ||--o{ AuditLog : performs
+    doctors ||--o{ students : mentors_optional
+    doctors ||--o{ patients : assigned_doctor
+    students ||--o{ patients : assigned_student
+    doctors ||--o| users : has_account
+    students ||--o| users : has_account
+    patients ||--o| users : portal_account
 
-    Patient ||--o| MedicalHistory : has
-    Patient ||--o{ ToothCondition : has_32_teeth
-    Patient ||--o{ ToothHistory : accumulates
-    Patient ||--o{ Appointment : books
-    Patient ||--o{ Visit : attends
-    Patient ||--o{ TreatmentPlan : prescribed
-    Patient ||--o{ Prescription : receives
-    Patient ||--o{ Document : stores
-    Patient ||--o{ Invoice : billed
-    Patient ||--o{ FollowUp : scheduled
+    patients ||--o{ appointments : books
+    doctors ||--o{ appointments : scheduled_for
+    students ||--o{ appointments : assists
 
-    Appointment ||--o| Visit : yields
-    Visit ||--o{ ToothHistory : updates_in
-    Visit ||--o{ Prescription : writes_in
+    patients ||--o{ clinical_records : receives
+    doctors ||--o{ clinical_records : authors
+    appointments ||--o| clinical_records : yields_visit
 
-    TreatmentPlan ||--o{ TreatmentItem : contains
-    Prescription ||--o{ PrescriptionItem : contains
-    Invoice ||--o{ InvoiceItem : lists
-    Invoice ||--o{ Payment : receives_payments
+    patients ||--o{ documents : stores_encrypted
+    clinical_records ||--o{ documents : attached_to
+
+    patients ||--o{ care_and_system_logs : tracks
+    users ||--o{ care_and_system_logs : performs
 ```
 
 ---
 
 ## 2. Table Specifications & Indexes
 
-### `users`
-- Primary identity store for clinicians and administrative staff.
-- Columns: `id` (PK), `email` (Unique, indexed), `username` (Unique, indexed), `hashed_password`, `full_name`, `role` (indexed), `phone`, `is_active`, `failed_login_attempts`, `locked_until`, `created_at`, `updated_at`.
+### `doctors` (`models/doctor.py`)
+- Faculty clinicians and designated Admin Doctors (`is_admin=True`).
+- Columns: `id` (PK), `doctor_code` (Unique, indexed), `full_name`, `email` (Unique, indexed), `phone`, `specialization`, `department`, `cabin_operatory`, `license_number`, `google_calendar_id`, `is_admin`, `is_active`, `created_at`, `updated_at`.
 
-### `dentists`
-- Clinician specific profile details.
-- Columns: `id` (PK), `user_id` (FK -> `users.id`, Unique), `license_number` (Unique, indexed), `specialization`, `qualifications`, `cabin_number`, `is_active`.
+### `students` (`models/student.py`)
+- Dental student trainees with flexible pool assignment (`doctor_id` nullable).
+- Columns: `id` (PK), `student_code` (Unique, indexed), `full_name`, `email` (Unique, indexed), `phone`, `department`, `year_of_study`, `doctor_id` (FK -> `doctors.id`, nullable, `ON DELETE SET NULL`), `is_active`, `token_version`, `revoked_at`, `created_at`, `updated_at`.
 
-### `patients`
-- Primary patient demographic records.
-- Columns: `id` (PK), `patient_id` (Unique, indexed, e.g. `PAT-2026-0001`), `first_name`, `last_name` (indexed), `date_of_birth`, `gender`, `phone` (indexed), `email`, `address`, `emergency_contact_name`, `emergency_contact_phone`, `is_deleted` (soft-delete flag), `created_at`, `updated_at`.
+### `patients` (`models/patient.py`)
+- Primary patient demographic records, triage severity, and longitudinal JSON clinical stores.
+- Columns: `id` (PK), `patient_code` (Unique, indexed), `cr_number` (Unique, indexed), `full_name`, `first_name`, `last_name` (indexed), `date_of_birth`, `age`, `gender`, `phone` (indexed), `email`, `address`, `emergency_contact_name`, `emergency_contact_phone`, `preferred_language` (`en`/`hi`/`pa`), `doctor_id` (FK), `student_id` (FK), `disease_categories_json`, `case_keywords_json`, `is_special_case`, `pain_scale`, `severity_level`, `registration_card_doc_id`, `consent_doc_id`, `consent_signed_at`, `medical_history_json`, `dental_chart_json` (32 FDI teeth `11–48`), `perio_chart_json` (32 teeth × 6 sites), `misc_records_json`, `patient_shared_notices_json`, `is_deleted` (soft-delete flag), `created_at`, `updated_at`.
 
-### `teeth` (`tooth_conditions`)
-- Stores current clinical status for each permanent tooth (11 to 48) per patient.
-- Initialized with 32 permanent teeth upon patient registration.
-- Columns: `id` (PK), `patient_id` (FK -> `patients.id`, indexed), `tooth_number` (indexed, 11-48), `condition` (indexed, default 'healthy'), `severity`, `surfaces`, `notes`, `updated_at`.
-- Unique constraint: `(patient_id, tooth_number)`.
+### `users` (`models/user.py`)
+- Primary identity store across all 5 roles (`admin`, `doctor`, `student`, `receptionist`, `patient`).
+- Columns: `id` (PK), `email` (Unique, indexed), `username` (Unique, indexed), `hashed_password`, `full_name`, `role` (indexed), `is_admin`, `doctor_id` (FK), `student_id` (FK), `patient_id` (FK), `is_active`, `token_version`, `revoked_at`, `refresh_tokens_json`, `failed_login_attempts`, `locked_until`, `last_login`, `created_at`, `updated_at`.
 
-### `tooth_history`
-- Append-only immutable log of every tooth examination or procedure.
-- Columns: `id` (PK), `patient_id` (FK), `visit_id` (FK, nullable), `dentist_id` (FK), `tooth_number`, `condition`, `severity`, `surfaces`, `notes`, `created_at` (indexed).
+### `appointments` (`models/appointment.py`)
+- Clinic consultation schedule, operatory allocation, and attendance tracking.
+- Columns: `id` (PK), `patient_id` (FK), `doctor_id` (FK, indexed), `student_id` (FK, nullable), `appointment_date` (indexed), `start_time`, `end_time`, `appointment_type`, `operatory`, `status` (indexed), `attendance_status` (`pending`/`checked_in`/`present`/`completed`/`missed`), `is_missed`, `missed_reason`, `cancellation_reason`, `google_event_id`, `notes`, `created_at`, `updated_at`.
 
-### `appointments`
-- Clinic consultation schedule.
-- Columns: `id` (PK), `patient_id` (FK), `dentist_id` (FK, indexed), `appointment_date` (indexed), `start_time`, `end_time`, `status` (indexed), `appointment_type_id`, `reason`, `notes`, `created_at`.
-- Index: `(dentist_id, appointment_date, start_time)` for fast conflict detection.
+### `clinical_records` (`models/clinical_record.py`)
+- Polymorphic clinical record store (`record_type` = `visit` | `treatment_plan` | `surgical_log` | `prescription` | `rx_template`).
+- Columns: `id` (PK), `patient_id` (FK, nullable for templates), `doctor_id` (FK), `student_id` (FK, nullable), `appointment_id` (FK, nullable), `record_type` (indexed), `record_date`, `title`, `language` (`en`/`hi`/`pa`), `status`, `is_visible_to_patient`, `payload_json`, `created_at`, `updated_at`.
 
-### `treatment_plans` & `treatment_items`
-- Multi-procedure care plans with cost estimates.
-- `treatment_plans`: `id` (PK), `patient_id` (FK), `dentist_id` (FK), `title`, `status`, `notes`, `created_at`.
-- `treatment_items`: `id` (PK), `treatment_plan_id` (FK), `procedure_name`, `tooth_number`, `estimated_cost` (`Numeric(10, 2)`), `actual_cost` (`Numeric(10, 2)`), `status`, `notes`.
+### `documents` (`models/document.py`)
+- Metadata for AES-256-GCM encrypted files (`PGIV1`) stored in `backend/uploads/vault/`.
+- Columns: `id` (PK), `patient_id` (FK, indexed), `clinical_record_id` (FK, nullable), `document_type`, `title`, `disease_category`, `treatment_stage`, `media_date`, `is_shared_with_patient`, `file_name`, `original_file_name`, `storage_key`, `file_size`, `mime_type`, `sha256_checksum`, `is_encrypted`, `encryption_iv`, `uploaded_by_user_id`, `created_at`.
 
-### `invoices`, `invoice_items` & `payments`
-- Financial records with atomic transaction calculations.
-- `invoices`: `id` (PK), `invoice_number` (Unique, indexed), `patient_id` (FK), `issue_date`, `due_date`, `subtotal` (`Numeric(10, 2)`), `discount` (`Numeric(10, 2)`), `tax` (`Numeric(10, 2)`), `total` (`Numeric(10, 2)`), `paid_amount` (`Numeric(10, 2)`), `balance` (`Numeric(10, 2)`), `status` (indexed).
-- `payments`: `id` (PK), `invoice_id` (FK), `patient_id` (FK), `amount` (`Numeric(10, 2)`), `payment_method` (`cash`, `card`, `upi`, `bank_transfer`), `transaction_reference`, `payment_date` (indexed).
-
-### `audit_logs`
-- Centralized compliance audit trail.
-- Columns: `id` (PK), `user_id` (FK, nullable), `user_email` (indexed), `action` (indexed), `entity_name` (indexed), `entity_id` (indexed), `details` (JSON text), `ip_address`, `user_agent`, `created_at` (indexed).
+### `care_and_system_logs` (`models/care_log.py`)
+- Unified operational, communication, and compliance log (`event_type` = `enquiry` | `followup` | `recall` | `notification` | `audit` | `clinic_config`).
+- Columns: `id` (PK), `event_type` (indexed), `patient_id` (FK, nullable), `assigned_doctor_id` (FK, nullable), `assigned_student_id` (FK, nullable), `actor_user_id` (FK, nullable), `status`, `scheduled_date`, `channel`, `language`, `title`, `payload_json`, `created_at`, `updated_at`.
 
 ---
 
-## 3. Financial Precision & Integrity Rules
+## 3. Data Integrity & Preservation Rules
 
-1. **Zero Floating-Point Drift:** All money columns use SQL `Numeric(10, 2)` mapped to Python `Decimal`. Floating-point arithmetic (`float`) is strictly prohibited in services and database models.
-2. **Transactional Ledger Balance Calculation:**
-   $$\text{balance} = \text{total} - \sum (\text{valid payments})$$
-   When a payment transaction is recorded, it executes within an atomic database transaction.
-3. **No Accidental Clinical Cascade Deletes:** Foreign keys connecting Patients to Visits, Tooth Conditions, Invoices, and Prescriptions employ `ON DELETE RESTRICT` or soft deletion semantics. A patient deletion archives the account (`is_deleted = True`) without destroying past clinical history.
+1. **Hard 8-Table Cap:** New clinical/operational features extend JSON payloads in `patients`, `clinical_records`, or `care_and_system_logs` rather than adding tables.
+2. **No Accidental Clinical Cascade Deletes:** Patient deletion uses soft deletion (`is_deleted = True`) while preserving longitudinal clinical records, and trainee/doctor reassignments use `ON DELETE SET NULL` so clinical history is never lost.
 
 ---
 

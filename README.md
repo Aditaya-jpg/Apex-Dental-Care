@@ -1,4 +1,4 @@
-# Apex Dental Care - Smart Dental Clinic Management & Patient Record System
+# PGI Dental Management System — Oral Health Sciences Centre, PGIMER Chandigarh
 
 [![CI/CD Pipeline](https://github.com/apex-dental/clinic-system/actions/workflows/ci.yml/badge.svg)](https://github.com/apex-dental/clinic-system/actions)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
@@ -7,7 +7,7 @@
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-d71f00.svg)](https://www.sqlalchemy.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Apex Dental Care is a **production-ready, end-to-end dental clinic management and electronic dental record (EDR) platform**. Designed for high-volume dental practices, hospital dental wings, and solo practices, the system replaces paper charts and disjointed software with a unified, HIPAA-aware clinical workflow.
+The **PGI Dental Management System** is a **role-based clinical electronic dental record (EDR), scheduling, encrypted imaging vault, and multilingual patient care platform** built for the **PGI Dental Branch — Oral Health Sciences Centre, PGIMER Chandigarh**. Designed around a strictly clinical and academic workflow (zero billing/invoices/payments) and a locked 8-table schema, it unifies doctor, trainee student, reception attendance, and privacy-isolated patient portal workflows.
 
 ---
 
@@ -19,49 +19,42 @@ Apex Dental Care is a **production-ready, end-to-end dental clinic management an
    - Clinical statuses: Healthy, Caries, Filled, Crown, Root Canal, Missing, Extraction, Fracture, Sensitivity, Mobility, Bridge, Implant.
    - Preserves complete immutable clinical tooth history across visits.
 
-2. **Patient Registration & Longitudinal 10-Tab Clinical Dossier:**
-   - Demographics, emergency contacts, medical alerts, allergy tracking, current medications.
-   - Tabbed records: Overview, Medical History, Clinical Visits, FDI Tooth Chart, Treatment Plans, Prescriptions, Documents & X-rays, Invoices & Payments, Follow-ups, and Audit History.
+2. **Patient Registration & Longitudinal 11-Tab Clinical Dossier:**
+   - CR Number, demographics, Aadhaar/registration card & signed consent upload, pain scale (0–10), triage severity, special-case flag, 10 canonical disease categories, and case keywords.
+   - Tabbed records: FDI Dental Chart (with 6-site Periodontal Chart), Examinations & Visits, Treatment Plans (with Surgical Logs), Prescriptions, X-rays (3D), Clinical Media & Photos, Miscellaneous, Appointments, Follow-ups, Medical/Dental History, and Event Timeline.
 
-3. **Conflict-Free Appointment Scheduling:**
-   - Multi-dentist calendar schedule with operatory allocation.
-   - Real-time double-booking prevention engine at service and database level.
-   - Status transitions: `scheduled` → `confirmed` → `completed` / `cancelled` / `no_show`.
+3. **Smart Calendar & Conflict-Free Appointment Scheduling:**
+   - Multi-mode **Smart Calendar** (**Doctor View** & **Operatory View**) with real-time double-booking prevention.
+   - Google Calendar links, RFC 5545 `.ics` downloads, missed-appointment tracking, and status transitions (`scheduled` → `confirmed` → `completed` / `cancelled` / `no_show`).
 
-4. **Clinical Examination & Diagnosis Workflow:**
-   - Vital signs recording (Blood Pressure, Heart Rate).
-   - Periodontal gum assessment, plaque/calculus hygiene indices, chief complaints, and oral findings.
-   - Direct linking between Appointments, Visits, and Tooth Conditions.
+4. **Clinical Examination & 6-Site Periodontal Charting:**
+   - Vital signs recording, chief complaints, and oral findings.
+   - Interactive 32-tooth, 6-site Periodontal Chart (`MB`, `B`, `DB`, `ML`, `L`, `DL`) with pocket-depth color coding (≥ 4 mm amber / ≥ 6 mm rose), recession, BOP, mobility (`0`/`I`/`II`/`III`), furcation, and plaque index.
 
-5. **Multi-Procedure Treatment Plans:**
-   - Multi-stage phased treatment plans with procedure itemization.
-   - Procedure Fee Catalog with standardized dental procedure codes (CDT-compatible).
+5. **Multi-Procedure Care Plans & Surgical Logs (Cost-Free):**
+   - Multi-stage clinical treatment plans without billing or fees.
+   - Dedicated Surgical Logs tracking procedure name, `tooth_numbers`, surgeon, anesthesia, operative notes, post-op instructions, and suture removal date.
    - Progress tracking: `planned` → `in_progress` → `completed`.
-   - Python `Decimal` and SQLAlchemy `Numeric(10, 2)` calculations (zero floating-point currency drift).
 
-6. **Prescriptions & Official PDF Generation:**
-   - Dental pharmacy formulary integration (Amoxicillin, Clindamycin, Ibuprofen, Chlorhexidine, etc.).
-   - Medicine dosage, frequency, duration, route, and timing instructions.
-   - Official signed vector PDF generated on-the-fly via ReportLab with security disclaimers and clinic letterhead.
+6. **Multilingual Prescriptions & HarfBuzz PDF Generation (EN / HI / PA):**
+   - Auto-Rx clinical templates, dental pharmacy formulary, and localized pre/post-treatment instructions in **English**, **Hindi**, and **Punjabi**.
+   - Official vector PDF generated via ReportLab with `uharfbuzz` + `fonttools` OpenType shaping and bundled Noto Sans / Devanagari / Gurmukhi fonts.
 
-7. **Itemized Billing & Clinical Invoicing:**
-   - Itemized invoices with item description, unit price, quantity, tax, and discounts.
-   - Conversion from multi-procedure treatment plans directly into official dental bills.
-   - Branded official invoice vector PDF generation with ReportLab and clinic letterhead.
+7. **Patient Care Hub, Recalls & Privacy-Isolated Patient Portal:**
+   - Localized SMS/Email alerts (default `SMS_SENDER_ID="PGIDNT"`), Automatic Recalls (`7d` suture, `14d` crown, `30d` RCT, `90d` perio, `6-month` checkup), Preventive Care campaigns, and Social Media intake webhooks.
+   - **Patient Portal** (`/portal/*`) showing only appointments, `.ics`/Google Calendar links, prescriptions & care instructions, and explicitly opt-in shared records.
 
-8. **Secure Document & X-Ray Vault:**
-   - Storage abstraction for Panoramic OPGs, IOPA X-rays, CBCT scans, lab reports, and signed consent forms.
-   - Path traversal guards, MIME-type and file extension validation, randomized server-side UUID filenames.
-   - Protected download endpoints enforcing strict role-based access control.
+8. **AES-256-GCM Encrypted Document, Media & CBCT Vault:**
+   - Chunked `PGIV1` AES-256-GCM storage for 6 clinical photo types (`intraoral`, `extraoral`, `surgery`, `iop`, `opg`, `cbct`) and raw CBCT scans up to **500 MB** (`25 MB` standard files).
+   - Magic-byte verification, SHA-256 checksums, blocked executable extensions, date-wise category X-ray links, lightbox preview, and `Share with Patient` toggle.
 
-9. **Centralized Compliance & Audit Logging:**
-   - Immutable audit trail recording user, action, target entity, timestamp, IP address, and client headers.
-   - Recursive metadata sanitization (passwords, JWTs, and keys are automatically scrubbed).
-   - Admin-only filterable audit inspection viewer.
+9. **Centralized Compliance, Audit & Instant Trainee Revocation:**
+   - Immutable audit trail recording user, action, target entity, timestamp, IP address, and client headers with recursive secret sanitization.
+   - Flexible student pool (`doctor_id` nullable) with instant JWT invalidation (`token_version` + `revoked_at`) on student removal.
 
-10. **Database-Driven Dashboard & Analytics:**
-    - Live KPIs: Total Patients, Appointments Today, Pending Treatments, Revenue Collected, Outstanding Receivables, Follow-ups Due.
-    - Recharts visual analytics: Revenue stream trends, appointment status distributions, and procedure volume charts.
+10. **Role-Aware Dashboards & Patient Tracker:**
+    - Live KPIs: Total Patients, Appointments Today, Missed Appointments Triage, Pain/Severity Triage, and Follow-ups Due.
+    - Recharts visual analytics (disease category breakdown, appointment status distributions, doctor activity) and Patient Tracker pipeline + social enquiry conversion.
 
 11. **Oral-3D Deep Learning 3D Teeth & X-Ray Suite (Doctor Portal):**
     - Seamless AI-powered reconstruction of interactive 3D teeth, jawbone, and arch structure from standard 2D panoramic radiographs (OPGs).
@@ -70,7 +63,7 @@ Apex Dental Care is a **production-ready, end-to-end dental clinic management an
     - Clinical dental arch biometrics: Arch Width, Depth, Height (mm) and Hard Volume (cm³).
     - 3D Model export center: Watertight STL (3D Printing / Aligners), OBJ (CAD / Exocad), GLB (Web / AR), and NIfTI (`.nii.gz`).
     - Longitudinal patient file storage: 3D models and findings attach directly to the patient's record under the **X-rays (3D)** tab.
-    - For full architecture, neural pipeline, and paper citations, see [ORAL_3D_README.md](file:///d:/oral_3d/Apex-Dental-Care-main/ORAL_3D_README.md).
+    - For full architecture, neural pipeline, and paper citations, see [ORAL_3D_README.md](./ORAL_3D_README.md).
 
 ---
 
@@ -79,10 +72,10 @@ Apex Dental Care is a **production-ready, end-to-end dental clinic management an
 | Layer | Technologies |
 |---|---|
 | **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, TanStack Query v5, React Router v6, Lucide Icons, Recharts |
-| **Backend** | Python 3.11/3.13, FastAPI, Pydantic v2 (`ConfigDict`), SQLAlchemy 2.x, Alembic |
-| **Database** | MySQL 8.0 (Production) / SQLite with Decimal precision (Local Dev/Testing) |
-| **Authentication** | JWT Access Tokens + HTTP-only SHA-256 Refresh Token Rotation, Bcrypt password hashing |
-| **Document Engine** | ReportLab 4.x (Prescription & Invoice PDF Generation) |
+| **Backend** | Python 3.11+, FastAPI, Pydantic v2 (`ConfigDict`), SQLAlchemy 2.x, Alembic |
+| **Database** | MySQL 8.0 (Production) / SQLite (Local Dev/Testing) — Locked 8-Table Schema |
+| **Authentication** | JWT Access Tokens + Refresh Token Rotation, `token_version` Instant Revocation, Bcrypt |
+| **Document Engine** | ReportLab 4.x + `uharfbuzz` + `fonttools` (Noto Sans EN/HI/PA Multilingual PDFs) |
 | **Infrastructure** | Docker, Docker Compose, Nginx (Alpine), Multi-stage builds |
 | **Testing** | Pytest, Pytest-Asyncio, HTTPX, Vitest, React Testing Library, Playwright E2E |
 
@@ -116,19 +109,19 @@ Once started:
 cd backend
 
 # Create and activate python virtual environment
-python -m venv venv
+python3 -m venv .venv
 # Windows:
-venv\Scripts\activate
+.venv\Scripts\activate
 # Linux/macOS:
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run database migrations
-alembic upgrade head
+# Verify/create 8-table database schema
+python migrate_db.py
 
-# Seed realistic demo database
+# Seed PGI Dental demo database
 python seeds/seed_data.py
 
 # Launch development server
@@ -155,13 +148,15 @@ Frontend will run at [http://localhost:3000](http://localhost:3000) with automat
 
 The database seeder pre-populates the platform with realistic clinical records and staff accounts:
 
-| Role | Email | Password | Full Name & Title |
+| Role | Email | Password | Access & Notes |
 |---|---|---|---|
-| **Administrator** | `admin@clinic.com` | `Dental@123` | Dr. Sarah Jenkins (Chief Medical Officer) |
-| **Dentist** | `dr.chen@clinic.com` | `Dental@123` | Dr. Marcus Chen (Periodontist, Operatory 1) |
-| **Dentist** | `dr.alvarez@clinic.com` | `Dental@123` | Dr. Elena Alvarez (Prosthodontist, Operatory 2) |
-| **Receptionist** | `reception1@clinic.com` | `Dental@123` | Jessica Miller (Head Front Desk Coordinator) |
-| **Receptionist** | `reception2@clinic.com` | `Dental@123` | David Ross (Patient Care Coordinator) |
+| **Administrator** | `admin@pgi.edu.in` | `Dental@123` | Full system & branch administration |
+| **Admin Doctor** | `dr.mehta@pgi.edu.in` | `Dental@123` | Doctor with `is_admin=True` (clinical + admin access) |
+| **Doctor** | `dr.sharma@pgi.edu.in` | `Dental@123` | Branch-wide patient & clinical access |
+| **Doctor** | `dr.kaur@pgi.edu.in` | `Dental@123` | Branch-wide patient & clinical access |
+| **Student Trainee** | `student1@pgi.edu.in` .. `student6@pgi.edu.in` | `Dental@123` | Isolated to assigned patients (`student4–5` unassigned pool) |
+| **Receptionist** | `reception@pgi.edu.in` | `Dental@123` | Attendance & walk-in check-in desk only |
+| **Patient Portal** | `patient@pgi.edu.in` | `Dental@123` | Portal user linked to Patient #1 (Aarav Sharma) |
 
 > ⚠️ **Security Notice:** The above credentials are provided exclusively for evaluation and demo environments. Production environments must change all passwords and rotate JWT secrets immediately upon initialization.
 
@@ -169,10 +164,10 @@ The database seeder pre-populates the platform with realistic clinical records a
 
 ## 🧪 Testing Suites
 
-### Backend Tests (29 automated tests)
+### Backend Tests (41 automated tests)
 ```bash
 cd backend
-venv\Scripts\pytest -v
+.venv/bin/pytest -v
 ```
 
 ### Frontend Tests (Vitest + React Testing Library)

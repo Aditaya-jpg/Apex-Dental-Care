@@ -1,8 +1,8 @@
-# Apex Dental Care - System Architecture Document
+# PGI Dental Management System - System Architecture Document
 
 ## 1. Architectural Philosophy & Overview
 
-Apex Dental Care is architected as a **stateless, micro-service ready, modular monolith**. The system decouples presentation, orchestration, and persistence into clear architectural layers, ensuring that business logic is strictly isolated from HTTP delivery protocols.
+The **PGI Dental Management System** (Oral Health Sciences Centre, PGIMER Chandigarh) is architected as a **stateless, modular monolith**. The system decouples presentation, orchestration, and persistence into clear architectural layers, ensuring that business logic, RBAC patient isolation, and AES-256-GCM media encryption are strictly enforced in backend services.
 
 ```mermaid
 graph TD
@@ -10,13 +10,13 @@ graph TD
     Nginx["Nginx Reverse Proxy & Static Host"]
     FastAPI["FastAPI REST Application Layer"]
     Middlewares["Security Headers & Correlation Middlewares"]
-    Routers["REST Routers (/patients, /treatments, etc.)"]
-    Services["Service Layer (Business Rules & Validation)"]
-    ORM["SQLAlchemy 2.0 ORM Mappings"]
-    Database[("MySQL 8.0 / Relational DB")]
-    FileVault[("Secure File Storage Vault")]
-    PDFEngine["ReportLab Vector PDF Engine"]
-    AuditService["Centralized Audit Logger"]
+    Routers["21 REST Routers (/patients, /dental-chart, /patient-portal, etc.)"]
+    Services["Service Layer (RBAC Scoping, Conflicts, Recalls, GCal)"]
+    ORM["SQLAlchemy 2.0 ORM (Locked 8-Table Schema)"]
+    Database[("MySQL 8.0 / SQLite Relational DB")]
+    FileVault[("AES-256-GCM Chunked File Vault (PGIV1)")]
+    PDFEngine["ReportLab + uharfbuzz Multilingual PDF Engine"]
+    AuditService["Centralized Audit & Care Log Service"]
 
     Client -->|HTTPS / API Requests| Nginx
     Nginx -->|Proxy Pass| FastAPI
@@ -44,24 +44,23 @@ The backend enforces strict separation of concerns across 5 distinct tiers:
 
 ### 2. Service Tier (`app/services/`)
 - Contains 100% of domain business logic.
-- Atomic business transactions, conflict detection (e.g. appointment double-booking), financial aggregations, and tooth condition history creation.
+- Atomic business transactions, conflict detection (doctor & operatory double-booking), automatic recalls, Google Calendar `.ics` generation, and tooth/perio condition history creation.
 - Explicit transactional scope management with automated rollbacks on failure.
 
 ### 3. Model & Persistence Tier (`app/models/` & `app/database.py`)
-- Declarative SQLAlchemy 2.0 ORM entity definitions.
-- Explicit foreign keys, unique composite indexes, soft-delete flags (`is_deleted`), and timestamp tracking (`created_at`, `updated_at`).
-- All currency columns defined as `Numeric(10, 2)` to eliminate floating-point arithmetic errors.
+- Declarative SQLAlchemy 2.0 ORM entity definitions locked to **strictly 8 tables** (`doctors`, `students`, `patients`, `users`, `appointments`, `clinical_records`, `documents`, `care_and_system_logs`).
+- Explicit foreign keys (`ON DELETE SET NULL` for flexible academic pool assignments), JSON payload columns (`payload_json`, `dental_chart_json`, `perio_chart_json`, `misc_records_json`), soft-delete flags (`is_deleted`), and timestamp tracking (`created_at`, `updated_at`).
 
 ### 4. Security Tier (`app/security/`)
-- Cryptographic password hashing using standard Argon2id / Bcrypt implementations.
-- JWT access token minting and cryptographic verification.
-- Cryptographically random refresh token generation with SHA-256 hash storage in the database.
-- Declarative role-permission matrix.
+- Cryptographic password hashing using Bcrypt.
+- JWT access token minting with `token_version` & `revoked_at` validation for instant student/staff revocation.
+- Cryptographically random refresh token rotation with SHA-256 hash storage.
+- Declarative role-permission matrix (`require_roles`) and `verify_patient_access` scoping.
 
-### 5. Cross-Cutting Utilities (`app/audit/`, `app/pdf/`, `app/storage/`)
-- **Centralized Audit Logger:** Automatically captures mutating events with recursive sensitive-data sanitization.
-- **ReportLab PDF Generator:** Generates compliant vector PDF documents with clinic branding.
-- **Storage Abstraction:** Protects uploads with UUID renaming, MIME verification, and path traversal guards.
+### 5. Cross-Cutting Utilities (`app/audit/`, `app/pdf/`, `app/storage/`, `app/i18n/`)
+- **Centralized Audit Logger:** Captures mutating events in `care_and_system_logs` with recursive sensitive-data sanitization.
+- **HarfBuzz + ReportLab PDF Generator:** Shapes English, Hindi (Devanagari), and Punjabi (Gurmukhi) prescriptions using `uharfbuzz` + `fonttools` glyph paths with bundled Noto fonts.
+- **AES-256-GCM Storage Vault (`PGIV1`):** Protects uploads with 1 MB chunked AEAD encryption, magic-byte verification, SHA-256 checksums, and up to 500 MB CBCT streaming.
 
 ---
 
@@ -140,4 +139,4 @@ sequenceDiagram
 
 1. **Network Boundary:** The database (`apex_dental_mysql`) is placed in an internal Docker network and is inaccessible from the public internet.
 2. **Access Boundary:** Reverse proxy (Nginx) terminates external HTTP requests and applies security headers before forwarding traffic to the application server.
-3. **Application Boundary:** Every sensitive route verifies both authentication (valid JWT signature and unexpired token) and authorization (user's role matches required endpoint permission).
+3. **Application Boundary:** Every route verifies authentication (valid JWT signature, unexpired token, matching `token_version`, and unrevoked `Student.revoked_at`), role authorization (`require_roles`), and patient scope (`verify_patient_access` / Patient Portal self-only isolation).

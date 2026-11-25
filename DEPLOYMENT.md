@@ -1,15 +1,15 @@
-# Apex Dental Care - Production Deployment & Operations Guide
+# PGI Dental Management System - Production Deployment & Operations Guide
 
 ## 1. Production Topology
 
 ```mermaid
 graph TD
-    Internet((Public Internet))
+    Internet((Public Internet / Hospital Intranet))
     LB["HTTPS Reverse Proxy (Nginx / Cloudflare)"]
     Frontend["React Static Assets (Nginx Alpine)"]
     Backend["FastAPI ASGI Application (Gunicorn + Uvicorn)"]
-    Database[("MySQL 8.0 Enterprise Cluster")]
-    Storage[("Encrypted S3 / Block Storage")]
+    Database[("MySQL 8.0 Cluster (8-Table Schema)")]
+    Storage[("AES-256-GCM Encrypted Vault / S3")]
 
     Internet -->|TLS 1.3 / Port 443| LB
     LB -->|HTTP Static Assets| Frontend
@@ -45,9 +45,15 @@ Ensure the following variables are configured with high-entropy cryptographic st
 ```ini
 ENVIRONMENT=production
 DEBUG=false
-DATABASE_URL=mysql+mysqldb://dental_prod:STRONG_DB_PASS@mysql:3306/dental_clinic
+DATABASE_URL=mysql+pymysql://dental_prod:STRONG_DB_PASS@mysql:3306/dental_clinic
 JWT_SECRET=GENERATE_RANDOM_64_CHARACTERS_STRING
 JWT_REFRESH_SECRET=GENERATE_ANOTHER_RANDOM_64_CHARACTERS_STRING
+FILE_ENCRYPTION_KEY=GENERATE_32_BYTE_ENCRYPTION_KEY
+CLINIC_NAME=PGI Dental Branch — Oral Health Sciences Centre
+SMS_SENDER_ID=PGIDNT
+STORAGE_TYPE=local
+MAX_UPLOAD_MB=25
+MAX_CBCT_UPLOAD_MB=500
 CORS_ORIGINS=https://clinic.yourdomain.com
 ```
 
@@ -160,37 +166,7 @@ docker exec apex_dental_backend alembic upgrade head
 
 ---
 
-## 7. Online Payment Gateway & Webhook Setup
+## 7. Encrypted Vault & Messaging Configuration
 
-### Production Webhook Endpoint
-Configure your payment provider (Razorpay / India Gateway) webhook destination to:
-```
-https://clinic.yourdomain.com/api/v1/billing/webhooks/razorpay
-```
-
-### Essential Nginx Reverse Proxy Directives
-To ensure cryptographic HMAC signature verification succeeds, Nginx must preserve the raw request body without buffering or modifying whitespace:
-```nginx
-location /api/v1/billing/webhooks/ {
-    proxy_pass http://127.0.0.1:8000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Razorpay-Signature $http_x_razorpay_signature;
-    
-    # Preserve raw body stream for HMAC-SHA256 signature verification
-    proxy_pass_request_body on;
-    proxy_buffering off;
-}
-```
-
-### Required Production Environment Variables
-```ini
-PAYMENT_PROVIDER=razorpay
-PAYMENT_MODE=live
-PAYMENT_KEY_ID=rzp_live_your_actual_key_id
-PAYMENT_KEY_SECRET=your_production_secret_key
-PAYMENT_WEBHOOK_SECRET=your_configured_webhook_secret
-PAYMENT_CURRENCY=INR
-```
+- **Encrypted Vault Backups:** Back up `backend/uploads/vault/` alongside `FILE_ENCRYPTION_KEY` — `.enc` files encrypted with AES-256-GCM (`PGIV1`) cannot be decrypted without the matching key.
+- **Messaging & Social Hub:** Configure `SMS_SENDER_ID` (default `PGIDNT`) and optional SMS/Email/WhatsApp/Social webhook tokens in `.env` or via the **Patient Care** settings API (`/api/v1/notifications/settings`).
