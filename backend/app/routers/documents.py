@@ -55,23 +55,47 @@ async def upload_document(
 
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
+    patient_id: int | None = None,
     document_type: str | None = None,
+    treatment_stage: str | None = None,
+    disease_category: str | None = None,
+    media_date: date | None = None,
     current_user: User = Depends(require_roles("admin", "doctor", "student")),
     db: Session = Depends(get_db),
 ):
     """Retrieve encrypted clinic documents scoped by RBAC (Students see only assigned patients)."""
-    docs = DocumentService.get_all_documents(db, current_user=current_user, document_type=document_type)
+    docs = DocumentService.get_all_documents(
+        db,
+        current_user=current_user,
+        patient_id=patient_id,
+        document_type=document_type,
+        treatment_stage=treatment_stage,
+        disease_category=disease_category,
+        media_date=media_date,
+    )
     return [to_document_response(d) for d in docs]
 
 
 @router.get("/patient/{patient_id}", response_model=list[DocumentResponse])
 def get_patient_documents(
     patient_id: int,
+    document_type: str | None = None,
+    treatment_stage: str | None = None,
+    disease_category: str | None = None,
+    media_date: date | None = None,
     current_user: User = Depends(require_roles("admin", "doctor", "student")),
     db: Session = Depends(get_db),
 ):
     """Retrieve metadata of documents and scans for an authorized patient."""
-    docs = DocumentService.get_patient_documents(db, patient_id, current_user=current_user)
+    docs = DocumentService.get_patient_documents(
+        db,
+        patient_id,
+        current_user=current_user,
+        document_type=document_type,
+        treatment_stage=treatment_stage,
+        disease_category=disease_category,
+        media_date=media_date,
+    )
     return [to_document_response(d) for d in docs]
 
 

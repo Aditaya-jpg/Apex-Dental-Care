@@ -1,7 +1,14 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+
+
+def _split_full_name(full_name: str) -> tuple[str, str]:
+    parts = full_name.strip().split(None, 1)
+    first = parts[0] if parts else ""
+    last = parts[1].strip() if len(parts) > 1 else ""
+    return first, last
 
 
 class MedicalHistoryBase(BaseModel):
@@ -39,8 +46,9 @@ class DentalHistoryResponse(DentalHistoryBase):
 
 
 class PatientBase(BaseModel):
-    first_name: str = Field(min_length=1, max_length=100)
-    last_name: str = Field(min_length=1, max_length=100)
+    full_name: str | None = None
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
     date_of_birth: date
     gender: str = Field(pattern="^(Male|Female|Other)$")
     phone: str = Field(min_length=5, max_length=50)
@@ -62,6 +70,8 @@ class PatientBase(BaseModel):
     parent_guardian_name: str | None = None
     parent_guardian_phone: str | None = None
     parent_consent_status: str = "not_required"
+    parent_consent_doc_id: int | None = None
+    card_doc_id: int | None = None
     card_verification_status: str = "pending"
     tracker_stage: str = "registered"
     source_channel: str = "walk_in"
@@ -71,8 +81,25 @@ class PatientCreate(PatientBase):
     medical_history: MedicalHistoryBase | None = None
     dental_history: DentalHistoryBase | None = None
 
+    @model_validator(mode="after")
+    def _ensure_name_fields(self):
+        fn = (self.first_name or "").strip()
+        ln = (self.last_name or "").strip()
+        full = (self.full_name or "").strip()
+        if not fn and full:
+            fn, ln_from_full = _split_full_name(full)
+            if not ln:
+                ln = ln_from_full
+        if not fn:
+            raise ValueError("Either full_name or first_name is required")
+        self.first_name = fn
+        self.last_name = ln
+        self.full_name = f"{fn} {ln}".strip()
+        return self
+
 
 class PatientUpdate(BaseModel):
+    full_name: str | None = None
     first_name: str | None = None
     last_name: str | None = None
     date_of_birth: date | None = None
@@ -131,8 +158,6 @@ class PatientDetailResponse(PatientBase):
     doctor_name: str | None = None
     student_name: str | None = None
     patient_card_document: str | None = None
-    card_doc_id: int | None = None
-    parent_consent_doc_id: int | None = None
     account_status: str = "active"
     attendance_status: str = "not_arrived"
     last_attendance_at: datetime | None = None
@@ -146,3 +171,125 @@ class PatientDetailResponse(PatientBase):
     medical_history: MedicalHistoryResponse | None = None
     dental_history: DentalHistoryResponse | None = None
     model_config = ConfigDict(from_attributes=True)
+
+
+def _normalize_tooth_numbers(raw: Any) -> list[int]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [int(x.strip()) for x in raw.split(",") if x.strip().isdigit()]
+    if isinstance(raw, list):
+        out: list[int] = []
+        for item in raw:
+            if isinstance(item, int):
+                out.append(item)
+            elif isinstance(item, str) and item.strip().isdigit():
+                out.append(int(item.strip()))
+        return out
+    return []
+
+
+class SurgicalLogCreate(BaseModel):
+    procedure_name: str = Field(min_length=1, max_length=255)
+    record_date: date | None = None
+    surgery_date: date | None = None
+    title: str | None = None
+    tooth_numbers: list[int] | list[str] | str | None = []
+    surgeon_name: str | None = None
+    anesthesia_type: str | None = None
+    operative_notes: str | None = None
+    post_op_instructions: str | None = None
+    suture_removal_date: date | None = None
+    linked_document_ids: list[int] = []
+    status: str = "completed"
+    doctor_id: int | None = None
+
+    @model_validator(mode="after")
+    def _coerce_teeth(self):
+        self.tooth_numbers = _normalize_tooth_numbers(self.tooth_numbers)
+        return self
+
+
+class SurgicalLogUpdate(BaseModel):
+    procedure_name: str | None = None
+    record_date: date | None = None
+    surgery_date: date | None = None
+    title: str | None = None
+    tooth_numbers: list[int] | list[str] | str | None = None
+    surgeon_name: str | None = None
+    anesthesia_type: str | None = None
+    operative_notes: str | None = None
+    post_op_instructions: str | None = None
+    suture_removal_date: date | None = None
+    linked_document_ids: list[int] | None = None
+    status: str | None = None
+
+    @model_validator(mode="after")
+    def _coerce_teeth(self):
+        if self.tooth_numbers is not None:
+            self.tooth_numbers = _normalize_tooth_numbers(self.tooth_numbers)
+        return self
+
+
+class SurgicalLogResponse(BaseModel):
+    id: int
+    patient_id: int
+    doctor_id: int | None = None
+    student_id: int | None = None
+    record_date: date
+    surgery_date: date
+    title: str
+    status: str
+    procedure_name: str
+    tooth_numbers: list[int] = []
+    surgeon_name: str | None = None
+    anesthesia_type: str | None = None
+    operative_notes: str | None = None
+    post_op_instructions: str | None = None
+    suture_removal_date: str | None = None
+    linked_document_ids: list[int] = []
+    is_visible_to_patient: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class MiscRecordsUpdate(BaseModel):
+    records: dict[str, Any] | None = None
+    misc_records_json: dict[str, Any] | None = None
+    category: str | None = None
+    notes: Any | None = None
+
+
+class SharedNoticeCreate(BaseModel):
+    category: str | None = None
+    notice_type: str | None = None
+    title: str = Field(min_length=1, max_length=255)
+    message: str | None = None
+    description: str | None = None
+    due_date: str | None = None
+    target_date: str | None = None
+    language: str = Field(default="en", pattern="^(en|hi|pa)$")
+
+    @model_validator(mode="after")
+    def _normalize_notice(self):
+        if not self.category:
+            self.category = self.notice_type or "scan_request"
+        if not self.notice_type:
+            self.notice_type = self.category
+        if not self.message:
+            self.message = (self.description or self.title).strip()
+        return self
+
+
+class SharedNoticeResponse(BaseModel):
+    id: str
+    category: str
+    notice_type: str | None = None
+    title: str
+    message: str
+    description: str | None = None
+    due_date: str | None = None
+    target_date: str | None = None
+    language: str = "en"
+    created_by: str | None = None
+    created_at: str

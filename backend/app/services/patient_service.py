@@ -1,11 +1,13 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
+import uuid
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_audit_event
+from app.models.clinical_record import ClinicalRecord
 from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.student import Student
@@ -13,9 +15,15 @@ from app.models.user import User
 from app.schemas.patient import (
     DentalHistoryResponse,
     MedicalHistoryResponse,
+    MiscRecordsUpdate,
     PatientCreate,
     PatientDetailResponse,
     PatientUpdate,
+    SharedNoticeCreate,
+    SurgicalLogCreate,
+    SurgicalLogResponse,
+    SurgicalLogUpdate,
+    _split_full_name,
 )
 from app.security.dependencies import (
     resolve_doctor_for_user,
@@ -31,6 +39,31 @@ def to_patient_detail(patient: Patient) -> PatientDetailResponse:
     resp.medical_history = MedicalHistoryResponse(patient_id=patient.id, **med) if med else MedicalHistoryResponse(patient_id=patient.id)
     resp.dental_history = DentalHistoryResponse(patient_id=patient.id, **dent) if dent else DentalHistoryResponse(patient_id=patient.id)
     return resp
+
+
+def to_surgical_log_response(rec: ClinicalRecord) -> SurgicalLogResponse:
+    p = rec.payload_json or {}
+    return SurgicalLogResponse(
+        id=rec.id,
+        patient_id=rec.patient_id or 0,
+        doctor_id=rec.doctor_id,
+        student_id=rec.student_id,
+        record_date=rec.record_date,
+        surgery_date=rec.record_date,
+        title=rec.title or p.get("procedure_name", ""),
+        status=rec.status,
+        procedure_name=p.get("procedure_name") or rec.title or "",
+        tooth_numbers=list(p.get("tooth_numbers") or []),
+        surgeon_name=p.get("surgeon_name") or (rec.doctor.full_name if rec.doctor else None),
+        anesthesia_type=p.get("anesthesia_type"),
+        operative_notes=p.get("operative_notes"),
+        post_op_instructions=p.get("post_op_instructions"),
+        suture_removal_date=p.get("suture_removal_date"),
+        linked_document_ids=list(p.get("linked_document_ids") or []),
+        is_visible_to_patient=rec.is_visible_to_patient,
+        created_at=rec.created_at,
+        updated_at=rec.updated_at,
+    )
 
 
 class PatientService:
@@ -157,13 +190,16 @@ class PatientService:
             "notes": None,
         }
 
-        full_name = f"{data.first_name.strip()} {data.last_name.strip()}".strip()
+        first_name = (data.first_name or "").strip()
+        last_name = (data.last_name or "").strip()
+        full_name = (data.full_name or f"{first_name} {last_name}").strip()
+
         new_patient = Patient(
             patient_code=patient_code,
             cr_number=cr_num,
             full_name=full_name,
-            first_name=data.first_name.strip(),
-            last_name=data.last_name.strip(),
+            first_name=first_name,
+            last_name=last_name,
             date_of_birth=data.date_of_birth,
             gender=data.gender,
             phone=data.phone.strip(),
@@ -282,16 +318,23 @@ class PatientService:
         for p in rows:
             if cat_list:
                 p_cats = [str(c).lower() for c in (p.disease_categories or [])]
-                if not any(c in p_cats for c in cat_list):
+                if not any(
+                    c == p_cat or (len(c) >= 4 and c in p_cat)
+                    for c in cat_list
+                    for p_cat in p_cats
+                ):
                     continue
             if kw_lower:
+                med = p.medical_history_json or {}
+                dent = p.dental_history_json or {}
                 haystack = " ".join([
                     *(str(k) for k in (p.case_keywords or [])),
                     *(str(c) for c in (p.disease_categories or [])),
-                    str((p.medical_history_json or {}).get("medical_conditions") or ""),
-                    str((p.dental_history_json or {}).get("habits") or ""),
+                    *(str(v) for v in med.values() if v),
+                    *(str(v) for v in dent.values() if v),
                     p.full_name,
                     p.cr_number or "",
+                    p.patient_code or "",
                 ]).lower()
                 if kw_lower not in haystack:
                     continue
@@ -371,11 +414,17 @@ class PatientService:
         med_data = update_dict.pop("medical_history", None)
         dent_data = update_dict.pop("dental_history", None)
 
+        if "full_name" in update_dict and update_dict["full_name"] and "first_name" not in update_dict:
+            fn, ln = _split_full_name(update_dict["full_name"])
+            update_dict["first_name"] = fn
+            if "last_name" not in update_dict:
+                update_dict["last_name"] = ln
+
         for k, v in update_dict.items():
             if hasattr(patient, k):
                 setattr(patient, k, v)
 
-        if "first_name" in update_dict or "last_name" in update_dict:
+        if "first_name" in update_dict or "last_name" in update_dict or "full_name" in update_dict:
             patient.full_name = f"{patient.first_name} {patient.last_name}".strip()
 
         if med_data is not None:
@@ -519,3 +568,298 @@ class PatientService:
 
         events.sort(key=lambda x: x["date"], reverse=True)
         return events
+
+    # ── Surgical Logs (ClinicalRecord record_type="surgical_log", is_visible_to_patient=False) ──
+
+    @staticmethod
+    def list_surgical_logs(db: Session, patient_id: int, current_user: User) -> list[SurgicalLogResponse]:
+        verify_patient_access(db, current_user, patient_id)
+        rows = (
+            db.query(ClinicalRecord)
+            .filter(ClinicalRecord.patient_id == patient_id, ClinicalRecord.record_type == "surgical_log")
+            .order_by(desc(ClinicalRecord.record_date), desc(ClinicalRecord.id))
+            .all()
+        )
+        return [to_surgical_log_response(r) for r in rows]
+
+    @staticmethod
+    def create_surgical_log(
+        db: Session,
+        patient_id: int,
+        data: SurgicalLogCreate,
+        current_user: User,
+        request: Request | None = None,
+    ) -> SurgicalLogResponse:
+        patient = verify_patient_access(db, current_user, patient_id, require_write=True)
+        doc = resolve_doctor_for_user(db, current_user)
+        target_doc_id = data.doctor_id or (doc.id if doc else patient.doctor_id)
+        surgeon_name = data.surgeon_name or (doc.full_name if doc else current_user.full_name)
+        surg_date = data.surgery_date or data.record_date or date.today()
+
+        payload_json = {
+            "procedure_name": data.procedure_name,
+            "tooth_numbers": data.tooth_numbers,
+            "surgeon_name": surgeon_name,
+            "anesthesia_type": data.anesthesia_type,
+            "operative_notes": data.operative_notes,
+            "post_op_instructions": data.post_op_instructions,
+            "suture_removal_date": data.suture_removal_date.isoformat() if data.suture_removal_date else None,
+            "linked_document_ids": data.linked_document_ids,
+        }
+
+        rec = ClinicalRecord(
+            patient_id=patient.id,
+            doctor_id=target_doc_id,
+            student_id=patient.student_id,
+            record_type="surgical_log",
+            record_date=surg_date,
+            title=data.title or data.procedure_name,
+            status=data.status or "completed",
+            language=patient.preferred_language or "en",
+            is_visible_to_patient=False,
+            payload_json=payload_json,
+        )
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+
+        log_audit_event(
+            db=db,
+            action="SURGICAL_LOG_CREATE",
+            user=current_user,
+            entity_name="SurgicalLog",
+            entity_id=str(rec.id),
+            patient_id=patient.id,
+            details={"procedure_name": data.procedure_name, "tooth_numbers": data.tooth_numbers},
+            request=request,
+        )
+
+        # Trigger localized post-treatment instruction alert via NotificationService
+        from app.services.notification_service import NotificationService
+
+        NotificationService.send_post_treatment_instruction(
+            db,
+            patient=patient,
+            procedure_name=data.procedure_name,
+            custom_instructions=data.post_op_instructions,
+            actor_user=current_user,
+        )
+
+        return to_surgical_log_response(rec)
+
+    @staticmethod
+    def update_surgical_log(
+        db: Session,
+        patient_id: int,
+        log_id: int,
+        data: SurgicalLogUpdate,
+        current_user: User,
+        request: Request | None = None,
+    ) -> SurgicalLogResponse:
+        verify_patient_access(db, current_user, patient_id, require_write=True)
+        rec = (
+            db.query(ClinicalRecord)
+            .filter(
+                ClinicalRecord.id == log_id,
+                ClinicalRecord.patient_id == patient_id,
+                ClinicalRecord.record_type == "surgical_log",
+            )
+            .first()
+        )
+        if not rec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "SURGICAL_LOG_NOT_FOUND", "message": "Surgical log not found."},
+            )
+
+        update_dict = data.model_dump(exclude_unset=True)
+        payload = dict(rec.payload_json or {})
+        new_date = update_dict.pop("surgery_date", None) or update_dict.pop("record_date", None)
+        if new_date:
+            rec.record_date = new_date
+        if "title" in update_dict and update_dict["title"]:
+            rec.title = update_dict.pop("title")
+        if "status" in update_dict and update_dict["status"]:
+            rec.status = update_dict.pop("status")
+        if "suture_removal_date" in update_dict:
+            srd = update_dict.pop("suture_removal_date")
+            payload["suture_removal_date"] = srd.isoformat() if srd else None
+
+        for k, v in update_dict.items():
+            payload[k] = v
+        if update_dict.get("procedure_name") and not data.title:
+            rec.title = update_dict["procedure_name"]
+        rec.payload_json = payload
+
+        db.commit()
+        db.refresh(rec)
+
+        log_audit_event(
+            db=db,
+            action="SURGICAL_LOG_UPDATE",
+            user=current_user,
+            entity_name="SurgicalLog",
+            entity_id=str(rec.id),
+            patient_id=patient_id,
+            details={"procedure_name": payload.get("procedure_name")},
+            request=request,
+        )
+        return to_surgical_log_response(rec)
+
+    @staticmethod
+    def delete_surgical_log(
+        db: Session,
+        patient_id: int,
+        log_id: int,
+        current_user: User,
+        request: Request | None = None,
+    ) -> None:
+        verify_patient_access(db, current_user, patient_id, require_write=True)
+        rec = (
+            db.query(ClinicalRecord)
+            .filter(
+                ClinicalRecord.id == log_id,
+                ClinicalRecord.patient_id == patient_id,
+                ClinicalRecord.record_type == "surgical_log",
+            )
+            .first()
+        )
+        if not rec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "SURGICAL_LOG_NOT_FOUND", "message": "Surgical log not found."},
+            )
+        db.delete(rec)
+        db.commit()
+        log_audit_event(
+            db=db,
+            action="SURGICAL_LOG_DELETE",
+            user=current_user,
+            entity_name="SurgicalLog",
+            entity_id=str(log_id),
+            patient_id=patient_id,
+            details={"deleted_id": log_id},
+            request=request,
+        )
+
+    # ── Category-Specific Miscellaneous Records (patient.misc_records_json) ──
+
+    @staticmethod
+    def get_misc_records(db: Session, patient_id: int, current_user: User) -> dict[str, Any]:
+        patient = verify_patient_access(db, current_user, patient_id)
+        return {
+            "patient_id": patient.id,
+            "disease_categories": list(patient.disease_categories or []),
+            "records": dict(patient.misc_records_json or {}),
+        }
+
+    @staticmethod
+    def update_misc_records(
+        db: Session,
+        patient_id: int,
+        data: MiscRecordsUpdate,
+        current_user: User,
+        request: Request | None = None,
+    ) -> dict[str, Any]:
+        patient = verify_patient_access(db, current_user, patient_id, require_write=True)
+        current_misc = dict(patient.misc_records_json or {})
+        incoming_records = data.records if data.records is not None else data.misc_records_json
+        if incoming_records is not None:
+            current_misc = dict(incoming_records)
+        if data.category is not None:
+            current_misc[data.category] = data.notes
+        patient.misc_records_json = current_misc
+        db.commit()
+        db.refresh(patient)
+
+        log_audit_event(
+            db=db,
+            action="MISC_RECORDS_UPDATE",
+            user=current_user,
+            entity_name="Patient",
+            entity_id=str(patient.id),
+            patient_id=patient.id,
+            details={"categories": list(current_misc.keys())},
+            request=request,
+        )
+        return {
+            "patient_id": patient.id,
+            "disease_categories": list(patient.disease_categories or []),
+            "records": dict(patient.misc_records_json or {}),
+        }
+
+    # ── Doctor-to-Patient Advisories / Shared Notices (patient.patient_shared_notices_json) ──
+
+    @staticmethod
+    def get_shared_notices(db: Session, patient_id: int, current_user: User) -> list[dict[str, Any]]:
+        patient = verify_patient_access(db, current_user, patient_id, allow_patient_self=True)
+        return list(patient.patient_shared_notices_json or [])
+
+    @staticmethod
+    def add_shared_notice(
+        db: Session,
+        patient_id: int,
+        data: SharedNoticeCreate,
+        current_user: User,
+        request: Request | None = None,
+    ) -> dict[str, Any]:
+        patient = verify_patient_access(db, current_user, patient_id, require_write=True)
+        notices = list(patient.patient_shared_notices_json or [])
+        notice = {
+            "id": f"notice-{uuid.uuid4().hex[:8]}",
+            "category": data.category or "scan_request",
+            "notice_type": data.notice_type or data.category or "scan_request",
+            "title": data.title.strip(),
+            "message": (data.message or data.title).strip(),
+            "description": data.description,
+            "due_date": data.due_date or data.target_date,
+            "target_date": data.target_date or data.due_date,
+            "language": data.language,
+            "created_by": current_user.full_name,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        notices.insert(0, notice)
+        patient.patient_shared_notices_json = notices
+        db.commit()
+        db.refresh(patient)
+
+        log_audit_event(
+            db=db,
+            action="SHARED_NOTICE_ADD",
+            user=current_user,
+            entity_name="Patient",
+            entity_id=str(patient.id),
+            patient_id=patient.id,
+            details={"notice_id": notice["id"], "category": notice["category"], "title": notice["title"]},
+            request=request,
+        )
+        return notice
+
+    @staticmethod
+    def delete_shared_notice(
+        db: Session,
+        patient_id: int,
+        notice_id: str,
+        current_user: User,
+        request: Request | None = None,
+    ) -> None:
+        patient = verify_patient_access(db, current_user, patient_id, require_write=True)
+        notices = list(patient.patient_shared_notices_json or [])
+        filtered = [n for n in notices if str(n.get("id")) != str(notice_id)]
+        if len(filtered) == len(notices):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "NOTICE_NOT_FOUND", "message": f"Shared notice '{notice_id}' not found."},
+            )
+        patient.patient_shared_notices_json = filtered
+        db.commit()
+        log_audit_event(
+            db=db,
+            action="SHARED_NOTICE_DELETE",
+            user=current_user,
+            entity_name="Patient",
+            entity_id=str(patient.id),
+            patient_id=patient.id,
+            details={"notice_id": notice_id},
+            request=request,
+        )

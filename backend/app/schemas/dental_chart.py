@@ -62,7 +62,7 @@ class DentalChartDetailResponse(BaseModel):
 
 class PerioChartUpdate(BaseModel):
     teeth: dict[str, dict[str, Any]] = {}
-    plaque_index: str | None = None
+    plaque_index: str | float | None = None
     notes: str | None = None
 
 
@@ -71,4 +71,11 @@ class PerioChartResponse(BaseModel):
     teeth: dict[str, Any] = {}
     snapshots: list[dict[str, Any]] = []
     summary: dict[str, Any] = {}
+    mean_ppd: float = 0.0
+    bop_percentage: float = 0.0
+    deepest_pocket: int = 0
+    sites_ge_4mm: int = 0
+    sites_ge_6mm: int = 0
+    plaque_index: str | float | None = None
+    notes: str | None = None
     updated_at: str | None = None

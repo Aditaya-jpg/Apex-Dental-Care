@@ -13,11 +13,17 @@ from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.common import MessageResponse, PaginatedResponse
 from app.schemas.patient import (
+    MiscRecordsUpdate,
     PatientCreate,
     PatientDetailResponse,
     PatientListItem,
     PatientSeverityUpdate,
     PatientUpdate,
+    SharedNoticeCreate,
+    SharedNoticeResponse,
+    SurgicalLogCreate,
+    SurgicalLogResponse,
+    SurgicalLogUpdate,
 )
 from app.security.dependencies import get_current_user, require_roles, verify_patient_access
 from app.services.document_service import DocumentService
@@ -34,6 +40,7 @@ class DateWiseXrayItem(BaseModel):
     media_date: date
     created_at: datetime
     xray_type: str
+    document_type: str
     title: str | None = None
     description: str | None = None
     disease_category: str | None = None
@@ -249,6 +256,7 @@ def get_datewise_xrays(
                 media_date=media_dt,
                 created_at=doc.created_at,
                 xray_type=doc.document_type.upper(),
+                document_type=doc.document_type,
                 title=doc.title,
                 description=doc.description,
                 disease_category=doc.disease_category or "Routine Diagnostic",
@@ -316,6 +324,7 @@ async def upload_datewise_xray(
         media_date=media_dt,
         created_at=doc.created_at,
         xray_type=xray_type,
+        document_type=doc.document_type,
         title=doc.title,
         description=doc.description,
         disease_category=doc.disease_category or "Clinical Review",
@@ -462,3 +471,223 @@ def update_card_verification_status(
     )
 
     return to_patient_detail(patient)
+
+
+@router.post("/{patient_id}/consent", response_model=PatientDetailResponse)
+async def upload_parent_consent(
+    request: Request,
+    patient_id: int,
+    file: UploadFile = File(...),
+    parent_guardian_name: str | None = Form(None),
+    parent_guardian_phone: str | None = Form(None),
+    parent_consent_status: str | None = Form(None),
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Upload encrypted signed parent/guardian consent form (minors or special cases)."""
+    patient = verify_patient_access(db, current_user, patient_id, require_write=True)
+
+    stored = await file_storage.save_encrypted_upload(
+        patient_id=patient.id,
+        file=file,
+        document_type="parent_consent",
+    )
+
+    doc = Document(
+        patient_id=patient.id,
+        uploaded_by_user_id=current_user.id,
+        document_type="parent_consent",
+        title="Parent / Guardian Consent Form",
+        description="Signed Parent or Guardian Consent Document",
+        treatment_stage="initial_assessment",
+        media_date=date.today(),
+        is_shared_with_patient=True,
+        storage_key=stored.storage_key,
+        original_filename=stored.original_filename,
+        mime_type=stored.mime_type,
+        file_size_bytes=stored.file_size_bytes,
+        is_encrypted=stored.is_encrypted,
+        encryption_iv=stored.encryption_iv,
+        sha256_checksum=stored.sha256_checksum,
+    )
+    db.add(doc)
+    db.flush()
+
+    patient.parent_consent_required = True
+    patient.parent_consent_doc_id = doc.id
+    if parent_guardian_name is not None:
+        patient.parent_guardian_name = parent_guardian_name.strip()
+    if parent_guardian_phone is not None:
+        patient.parent_guardian_phone = parent_guardian_phone.strip()
+    patient.parent_consent_status = parent_consent_status or "signed"
+
+    db.commit()
+    db.refresh(patient)
+
+    log_audit_event(
+        db=db,
+        action="PARENT_CONSENT_UPLOAD",
+        user=current_user,
+        entity_name="Patient",
+        entity_id=str(patient.id),
+        patient_id=patient.id,
+        details={"doc_id": doc.id, "consent_status": patient.parent_consent_status},
+        request=request,
+    )
+    return to_patient_detail(patient)
+
+
+@router.get("/{patient_id}/consent")
+def download_parent_consent(
+    patient_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Download/preview encrypted parent/guardian consent document after authorization check."""
+    patient = verify_patient_access(db, current_user, patient_id, allow_patient_self=True)
+
+    consent_doc = None
+    if patient.parent_consent_doc_id:
+        consent_doc = db.query(Document).filter(Document.id == patient.parent_consent_doc_id).first()
+    if not consent_doc:
+        consent_doc = (
+            db.query(Document)
+            .filter(Document.patient_id == patient.id, Document.document_type == "parent_consent")
+            .order_by(Document.created_at.desc())
+            .first()
+        )
+
+    if not consent_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "CONSENT_NOT_FOUND", "message": "No parent/guardian consent document uploaded."},
+        )
+
+    return StreamingResponse(
+        file_storage.iter_decrypted_chunks(consent_doc.storage_key),
+        media_type=consent_doc.mime_type,
+        headers={"Content-Disposition": f'inline; filename="{consent_doc.original_filename}"'},
+    )
+
+
+# ── Date-Wise Surgical Treatment Logs ──
+
+@router.get("/{patient_id}/surgical-logs", response_model=list[SurgicalLogResponse])
+def list_surgical_logs(
+    patient_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """List chronological surgical treatment logs (internal staff only, never exposed to patient)."""
+    return PatientService.list_surgical_logs(db, patient_id=patient_id, current_user=current_user)
+
+
+@router.post("/{patient_id}/surgical-logs", response_model=SurgicalLogResponse, status_code=status.HTTP_201_CREATED)
+def create_surgical_log(
+    request: Request,
+    patient_id: int,
+    payload: SurgicalLogCreate,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Log a surgical procedure and trigger localized post-treatment instruction alert."""
+    return PatientService.create_surgical_log(
+        db, patient_id=patient_id, data=payload, current_user=current_user, request=request
+    )
+
+
+@router.put("/{patient_id}/surgical-logs/{log_id}", response_model=SurgicalLogResponse)
+def update_surgical_log(
+    request: Request,
+    patient_id: int,
+    log_id: int,
+    payload: SurgicalLogUpdate,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Update an existing surgical treatment log."""
+    return PatientService.update_surgical_log(
+        db, patient_id=patient_id, log_id=log_id, data=payload, current_user=current_user, request=request
+    )
+
+
+@router.delete("/{patient_id}/surgical-logs/{log_id}", response_model=MessageResponse)
+def delete_surgical_log(
+    request: Request,
+    patient_id: int,
+    log_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Delete a surgical treatment log."""
+    PatientService.delete_surgical_log(
+        db, patient_id=patient_id, log_id=log_id, current_user=current_user, request=request
+    )
+    return MessageResponse(message=f"Surgical log {log_id} deleted.")
+
+
+# ── Category-Specific Miscellaneous Records ──
+
+@router.get("/{patient_id}/miscellaneous")
+def get_misc_records(
+    patient_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Retrieve category-specific miscellaneous clinical notes."""
+    return PatientService.get_misc_records(db, patient_id=patient_id, current_user=current_user)
+
+
+@router.put("/{patient_id}/miscellaneous")
+def update_misc_records(
+    request: Request,
+    patient_id: int,
+    payload: MiscRecordsUpdate,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Update category-specific miscellaneous clinical notes."""
+    return PatientService.update_misc_records(
+        db, patient_id=patient_id, data=payload, current_user=current_user, request=request
+    )
+
+
+# ── Doctor-to-Patient Advisories / Shared Notices ──
+
+@router.get("/{patient_id}/shared-notices", response_model=list[SharedNoticeResponse])
+def get_shared_notices(
+    patient_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor", "student", "patient")),
+    db: Session = Depends(get_db),
+):
+    """List doctor-issued advisories for the patient (tests/scans to conduct & bring)."""
+    return PatientService.get_shared_notices(db, patient_id=patient_id, current_user=current_user)
+
+
+@router.post("/{patient_id}/shared-notices", response_model=SharedNoticeResponse, status_code=status.HTTP_201_CREATED)
+def add_shared_notice(
+    request: Request,
+    patient_id: int,
+    payload: SharedNoticeCreate,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Doctor/Admin: Add a patient-visible test/scan advisory or care notice."""
+    return PatientService.add_shared_notice(
+        db, patient_id=patient_id, data=payload, current_user=current_user, request=request
+    )
+
+
+@router.delete("/{patient_id}/shared-notices/{notice_id}", response_model=MessageResponse)
+def delete_shared_notice(
+    request: Request,
+    patient_id: int,
+    notice_id: str,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Doctor/Admin: Remove a patient-visible advisory."""
+    PatientService.delete_shared_notice(
+        db, patient_id=patient_id, notice_id=notice_id, current_user=current_user, request=request
+    )
+    return MessageResponse(message=f"Shared notice '{notice_id}' removed.")

@@ -28,10 +28,13 @@ from app.routers import (
     documents,
     followups,
     health,
+    integrations,
+    notifications,
     patient_portal,
     patients,
     prescriptions,
     students,
+    tracker,
     treatments,
     users,
     visits,
@@ -108,6 +111,9 @@ app.include_router(prescriptions.router, prefix=api_prefix)
 app.include_router(documents.router, prefix=api_prefix)
 app.include_router(xrays.router, prefix=api_prefix)
 app.include_router(followups.router, prefix=api_prefix)
+app.include_router(tracker.router, prefix=api_prefix)
+app.include_router(notifications.router, prefix=api_prefix)
+app.include_router(integrations.router, prefix=api_prefix)
 app.include_router(dashboard.router, prefix=api_prefix)
 app.include_router(audit.router, prefix=api_prefix)
 

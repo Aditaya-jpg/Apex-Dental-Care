@@ -32,13 +32,13 @@ import PatientPrescriptions from './pages/patient/PatientPrescriptions';
 import PatientSharedRecords from './pages/patient/PatientSharedRecords';
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 2,
-      retry: 1,
-      refetchOnWindowFocus: false,
+    defaultOptions: {
+        queries: {
+            staleTime: 1000 * 60 * 2,
+            retry: 1,
+            refetchOnWindowFocus: false,
+        },
     },
-  },
 });
 
 /**
@@ -48,194 +48,194 @@ const queryClient = new QueryClient({
  * - Clinical Staff / Admin -> Dashboard (/dashboard)
  */
 const RootRedirect: React.FC = () => {
-  const { user } = useAuth();
-  if (user?.role === 'patient') {
-    return <Navigate to="/portal/appointments" replace />;
-  }
-  if (user?.role === 'receptionist') {
-    return <Navigate to="/attendance" replace />;
-  }
-  return <Navigate to="/dashboard" replace />;
+    const { user } = useAuth();
+    if (user?.role === 'patient') {
+        return <Navigate to="/portal/appointments" replace />;
+    }
+    if (user?.role === 'receptionist') {
+        return <Navigate to="/attendance" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
 };
 
 export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public Authentication Route */}
-            <Route path="/login" element={<Login />} />
+    return (
+        <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+                <BrowserRouter>
+                    <Routes>
+                        {/* Public Authentication Route */}
+                        <Route path="/login" element={<Login />} />
 
-            {/* Root Role Dispatcher */}
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <RootRedirect />
-                </ProtectedRoute>
-              }
-            />
+                        {/* Root Role Dispatcher */}
+                        <Route
+                            path="/"
+                            element={
+                                <ProtectedRoute>
+                                    <RootRedirect />
+                                </ProtectedRoute>
+                            }
+                        />
 
-            {/* Authenticated Locked Patient Portal (3 Tabs Only) */}
-            <Route
-              path="/portal"
-              element={
-                <ProtectedRoute allowedRoles={['patient', 'admin']}>
-                  <PatientLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Navigate to="/portal/appointments" replace />} />
-              <Route path="appointments" element={<PatientAppointments />} />
-              <Route path="prescriptions" element={<PatientPrescriptions />} />
-              <Route path="shared-records" element={<PatientSharedRecords />} />
-              <Route path="xrays" element={<Navigate to="/portal/shared-records" replace />} />
-            </Route>
+                        {/* Authenticated Locked Patient Portal (3 Tabs Only) */}
+                        <Route
+                            path="/portal"
+                            element={
+                                <ProtectedRoute allowedRoles={['patient', 'admin']}>
+                                    <PatientLayout />
+                                </ProtectedRoute>
+                            }
+                        >
+                            <Route index element={<Navigate to="/portal/appointments" replace />} />
+                            <Route path="appointments" element={<PatientAppointments />} />
+                            <Route path="prescriptions" element={<PatientPrescriptions />} />
+                            <Route path="shared-records" element={<PatientSharedRecords />} />
+                            <Route path="xrays" element={<Navigate to="/portal/shared-records" replace />} />
+                        </Route>
 
-            {/* Authenticated PGI Dental Clinical & Desk Portal */}
-            <Route
-              element={
-                <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student', 'receptionist']}>
-                  <MainLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route
-                path="attendance"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'receptionist']}>
-                    <Attendance />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="dashboard"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="tracker"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <PatientTracker />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="patients"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <Patients />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="patients/:id"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <PatientDetail />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="appointments"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <Appointments />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="patient-care"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <PatientCare />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="doctors"
-                element={
-                  <ProtectedRoute allowedRoles={['admin']}>
-                    <Doctors />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="students"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor']}>
-                    <Students />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="treatments"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor']}>
-                    <Treatments />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="prescriptions"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor']}>
-                    <Prescriptions />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="xrays"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <Xrays />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="followups"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <Followups />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="documents"
-                element={
-                  <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
-                    <Documents />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="audit-logs"
-                element={
-                  <ProtectedRoute allowedRoles={['admin']}>
-                    <AuditLogs />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="users"
-                element={
-                  <ProtectedRoute allowedRoles={['admin']}>
-                    <Users />
-                  </ProtectedRoute>
-                }
-              />
-            </Route>
+                        {/* Authenticated PGI Dental Clinical & Desk Portal */}
+                        <Route
+                            element={
+                                <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student', 'receptionist']}>
+                                    <MainLayout />
+                                </ProtectedRoute>
+                            }
+                        >
+                            <Route
+                                path="attendance"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'receptionist']}>
+                                        <Attendance />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="dashboard"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <Dashboard />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="tracker"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <PatientTracker />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="patients"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <Patients />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="patients/:id"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <PatientDetail />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="appointments"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <Appointments />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="patient-care"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <PatientCare />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="doctors"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin']}>
+                                        <Doctors />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="students"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor']}>
+                                        <Students />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="treatments"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor']}>
+                                        <Treatments />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="prescriptions"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor']}>
+                                        <Prescriptions />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="xrays"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <Xrays />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="followups"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <Followups />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="documents"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin', 'dentist', 'doctor', 'student']}>
+                                        <Documents />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="audit-logs"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin']}>
+                                        <AuditLogs />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="users"
+                                element={
+                                    <ProtectedRoute allowedRoles={['admin']}>
+                                        <Users />
+                                    </ProtectedRoute>
+                                }
+                            />
+                        </Route>
 
-            {/* Catch-all 404 */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
-  );
+                        {/* Catch-all 404 */}
+                        <Route path="*" element={<NotFound />} />
+                    </Routes>
+                </BrowserRouter>
+            </AuthProvider>
+        </QueryClientProvider>
+    );
 }

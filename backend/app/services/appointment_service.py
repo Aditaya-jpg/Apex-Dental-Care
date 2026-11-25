@@ -1,10 +1,12 @@
 from datetime import date, datetime, time, timedelta
+from typing import Any
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_audit_event
+from app.constants import OPERATORIES
 from app.models.appointment import Appointment
 from app.models.doctor import Doctor
 from app.models.patient import Patient
@@ -16,6 +18,8 @@ from app.schemas.appointment import (
     AppointmentUpdate,
 )
 from app.security.dependencies import resolve_doctor_for_user, resolve_student_for_user, verify_patient_access
+from app.services.google_calendar_service import sync_appointment_to_google_calendar
+from app.services.notification_service import NotificationService
 
 
 class AppointmentService:
@@ -60,7 +64,7 @@ class AppointmentService:
         current_user: User,
         request: Request | None = None,
     ) -> Appointment:
-        """Create a new appointment with doctor & operatory conflict prevention."""
+        """Create a new appointment with doctor & operatory conflict prevention + automated notifications."""
         patient = verify_patient_access(db, current_user, data.patient_id, require_write=True)
 
         doctor = db.query(Doctor).filter(Doctor.id == data.doctor_id, Doctor.is_active == True).first()
@@ -109,6 +113,12 @@ class AppointmentService:
         db.commit()
         db.refresh(appointment)
 
+        gcal_res = sync_appointment_to_google_calendar(appointment, patient, doctor)
+        if gcal_res.get("google_event_id"):
+            appointment.google_event_id = gcal_res["google_event_id"]
+            db.commit()
+            db.refresh(appointment)
+
         log_audit_event(
             db=db,
             action="CREATE",
@@ -120,6 +130,9 @@ class AppointmentService:
             request=request,
         )
 
+        NotificationService.send_appointment_lifecycle_alert(
+            db, appointment, "confirmed", actor_user=current_user
+        )
         return appointment
 
     @staticmethod
@@ -161,6 +174,83 @@ class AppointmentService:
             query = query.filter(Appointment.operatory == operatory)
 
         return query.order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc()).all()
+
+    @classmethod
+    def get_calendar_data(
+        cls,
+        db: Session,
+        current_user: User,
+        target_date: date,
+        view: str = "doctor",
+        range_mode: str = "day",
+    ) -> dict[str, Any]:
+        """Return Smart Calendar schedule grouped for Doctor-wise and Operatory-wise views."""
+        if range_mode == "week":
+            start_date = target_date - timedelta(days=target_date.weekday())
+            end_date = start_date + timedelta(days=6)
+        else:
+            start_date = target_date
+            end_date = target_date
+
+        query = db.query(Appointment).filter(
+            Appointment.appointment_date >= start_date,
+            Appointment.appointment_date <= end_date,
+        )
+
+        if current_user.role == "student":
+            stu = resolve_student_for_user(db, current_user)
+            if not stu:
+                appts = []
+            else:
+                assigned_ids = [
+                    r[0]
+                    for r in db.query(Patient.id).filter(Patient.student_id == stu.id, Patient.is_deleted == False).all()
+                ]
+                appts = (
+                    query.filter(Appointment.patient_id.in_(assigned_ids))
+                    .order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc())
+                    .all()
+                    if assigned_ids
+                    else []
+                )
+        else:
+            appts = query.order_by(Appointment.appointment_date.asc(), Appointment.start_time.asc()).all()
+
+        doctors = (
+            db.query(Doctor)
+            .filter(Doctor.is_active == True)
+            .order_by(Doctor.id.asc())
+            .all()
+        )
+        doctor_list = [
+            {
+                "id": d.id,
+                "full_name": d.full_name,
+                "specialization": d.specialization,
+                "department": d.department,
+                "cabin_operatory": d.cabin_operatory,
+            }
+            for d in doctors
+        ]
+
+        op_set = list(OPERATORIES)
+        for d in doctors:
+            if d.cabin_operatory and d.cabin_operatory not in op_set:
+                op_set.append(d.cabin_operatory)
+        for a in appts:
+            if a.operatory and a.operatory not in op_set:
+                op_set.append(a.operatory)
+
+        return {
+            "date": target_date.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "range": range_mode,
+            "view": view,
+            "doctors": doctor_list,
+            "operatories": op_set,
+            "appointments": appts,
+        }
 
     @staticmethod
     def get_appointment_by_id(db: Session, appointment_id: int, current_user: User) -> Appointment:
@@ -232,6 +322,10 @@ class AppointmentService:
             request=request,
         )
 
+        event_kind = "cancelled" if appt.status == "cancelled" else "updated"
+        NotificationService.send_appointment_lifecycle_alert(
+            db, appt, event_kind, actor_user=current_user
+        )
         return appt
 
     @classmethod
@@ -268,6 +362,13 @@ class AppointmentService:
             details={"new_status": data.status, "reason": data.cancellation_reason},
             request=request,
         )
+
+        if data.status == "cancelled":
+            NotificationService.send_appointment_lifecycle_alert(db, appt, "cancelled", actor_user=current_user)
+        elif data.status == "confirmed":
+            NotificationService.send_appointment_lifecycle_alert(db, appt, "confirmed", actor_user=current_user)
+        elif data.status == "no_show":
+            NotificationService.send_appointment_lifecycle_alert(db, appt, "missed_recall", actor_user=current_user)
 
         return appt
 
@@ -343,8 +444,11 @@ class AppointmentService:
             entity_name="Appointment",
             entity_id=str(appt.id),
             patient_id=patient.id,
-            details={"reason": data.missed_reason, "date": target_date.isoformat()},
+            details={"reason": data.missed_reason, "date": target_date.isoformat(), "send_recall": data.send_recall},
             request=request,
         )
+
+        if data.send_recall:
+            NotificationService.send_appointment_lifecycle_alert(db, appt, "missed_recall", actor_user=current_user)
 
         return appt

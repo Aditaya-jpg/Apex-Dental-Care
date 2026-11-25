@@ -18,6 +18,8 @@ from app.schemas.dental_chart import (
 )
 from app.security.dependencies import resolve_doctor_for_user, verify_patient_access
 
+PERIO_SITE_KEYS = ("mb", "b", "db", "ml", "l", "dl")
+
 
 def _parse_dt(val: str | None) -> datetime:
     if val:
@@ -26,6 +28,23 @@ def _parse_dt(val: str | None) -> datetime:
         except Exception:
             pass
     return datetime.now(UTC)
+
+
+def _normalize_site_map(raw: dict[str, Any] | None, *, boolean: bool = False) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    if not isinstance(raw, dict):
+        return normalized
+    preserve_upper = any(str(k).isupper() for k in raw)
+    lowered = {str(k).strip().lower(): v for k, v in raw.items()}
+    for sk in PERIO_SITE_KEYS:
+        if sk in lowered:
+            out_key = sk.upper() if preserve_upper else sk
+            val = lowered[sk]
+            if boolean:
+                normalized[out_key] = bool(val)
+            elif isinstance(val, (int, float)):
+                normalized[out_key] = int(val)
+    return normalized
 
 
 class DentalChartService:
@@ -218,31 +237,70 @@ class DentalChartService:
         ]
 
     @staticmethod
+    def _normalize_perio_teeth(raw_teeth: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        normalized: dict[str, dict[str, Any]] = {}
+        for t_key, tooth_info in (raw_teeth or {}).items():
+            if not str(t_key).isdigit() or int(t_key) not in FDI_PERMANENT_TEETH:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={"code": "INVALID_TOOTH", "message": f"Invalid FDI tooth number '{t_key}' in perio chart."},
+                )
+            info = dict(tooth_info or {})
+            depths = _normalize_site_map(info.get("probing_depths") or info.get("sites"))
+            recession = _normalize_site_map(info.get("recession"))
+            raw_bop = info.get("bop")
+            bop = _normalize_site_map(raw_bop, boolean=True) if isinstance(raw_bop, dict) else bool(raw_bop)
+            normalized[str(t_key)] = {
+                "probing_depths": depths,
+                "sites": depths,  # backward compatibility alias
+                "recession": recession,
+                "bop": bop,
+                "mobility": info.get("mobility", 0),
+                "furcation": info.get("furcation", 0),
+                "plaque_index": info.get("plaque_index"),
+                "notes": info.get("notes"),
+            }
+        return normalized
+
+    @staticmethod
     def _compute_perio_summary(teeth_data: dict[str, Any]) -> dict[str, Any]:
         depths: list[int] = []
         bop_sites = 0
-        total_sites = 0
-        deep_pockets = 0
-        for tooth_info in teeth_data.values():
-            sites = tooth_info.get("sites") or {}
+        total_bop_sites = 0
+        sites_ge_4 = 0
+        sites_ge_6 = 0
+        for tooth_info in (teeth_data or {}).values():
+            sites = tooth_info.get("probing_depths") or tooth_info.get("sites") or {}
             for val in sites.values():
                 if isinstance(val, (int, float)):
-                    depths.append(int(val))
-                    if val >= 4:
-                        deep_pockets += 1
-            bop = tooth_info.get("bop") or {}
-            for flag in bop.values():
-                total_sites += 1
-                if flag:
+                    d_val = int(val)
+                    depths.append(d_val)
+                    if d_val >= 4:
+                        sites_ge_4 += 1
+                    if d_val >= 6:
+                        sites_ge_6 += 1
+            bop = tooth_info.get("bop")
+            if isinstance(bop, dict):
+                for flag in bop.values():
+                    total_bop_sites += 1
+                    if flag:
+                        bop_sites += 1
+            elif isinstance(bop, bool):
+                total_bop_sites += 1
+                if bop:
                     bop_sites += 1
 
         mean_ppd = round(sum(depths) / len(depths), 2) if depths else 0.0
-        bop_pct = round((bop_sites / total_sites) * 100, 1) if total_sites else 0.0
+        deepest = max(depths) if depths else 0
+        bop_pct = round((bop_sites / total_bop_sites) * 100, 1) if total_bop_sites else 0.0
         return {
             "mean_ppd": mean_ppd,
-            "max_ppd": max(depths) if depths else 0,
             "bop_percentage": bop_pct,
-            "deep_pockets_ge_4mm": deep_pockets,
+            "deepest_pocket": deepest,
+            "max_ppd": deepest,
+            "sites_ge_4mm": sites_ge_4,
+            "sites_ge_6mm": sites_ge_6,
+            "deep_pockets_ge_4mm": sites_ge_4,
         }
 
     @classmethod
@@ -250,11 +308,19 @@ class DentalChartService:
         patient = verify_patient_access(db, current_user, patient_id)
         perio = dict(patient.perio_chart_json or {})
         teeth = perio.get("teeth") or {}
+        summary = cls._compute_perio_summary(teeth)
         return PerioChartResponse(
             patient_id=patient.id,
             teeth=teeth,
             snapshots=perio.get("snapshots") or [],
-            summary=perio.get("summary") or cls._compute_perio_summary(teeth),
+            summary=summary,
+            mean_ppd=summary["mean_ppd"],
+            bop_percentage=summary["bop_percentage"],
+            deepest_pocket=summary["deepest_pocket"],
+            sites_ge_4mm=summary["sites_ge_4mm"],
+            sites_ge_6mm=summary["sites_ge_6mm"],
+            plaque_index=perio.get("plaque_index"),
+            notes=perio.get("notes"),
             updated_at=perio.get("updated_at"),
         )
 
@@ -271,7 +337,9 @@ class DentalChartService:
         now_iso = datetime.now(UTC).isoformat()
         existing = dict(patient.perio_chart_json or {})
         snapshots = list(existing.get("snapshots") or [])
-        summary = cls._compute_perio_summary(data.teeth)
+
+        normalized_teeth = cls._normalize_perio_teeth(data.teeth)
+        summary = cls._compute_perio_summary(normalized_teeth)
 
         snapshots.append({
             "recorded_at": now_iso,
@@ -281,7 +349,7 @@ class DentalChartService:
             "summary": summary,
         })
         new_perio = {
-            "teeth": data.teeth,
+            "teeth": normalized_teeth,
             "snapshots": snapshots[-20:],
             "summary": summary,
             "plaque_index": data.plaque_index,
@@ -308,5 +376,12 @@ class DentalChartService:
             teeth=new_perio["teeth"],
             snapshots=new_perio["snapshots"],
             summary=summary,
+            mean_ppd=summary["mean_ppd"],
+            bop_percentage=summary["bop_percentage"],
+            deepest_pocket=summary["deepest_pocket"],
+            sites_ge_4mm=summary["sites_ge_4mm"],
+            sites_ge_6mm=summary["sites_ge_6mm"],
+            plaque_index=data.plaque_index,
+            notes=data.notes,
             updated_at=now_iso,
         )

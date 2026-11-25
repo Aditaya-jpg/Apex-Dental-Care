@@ -1,13 +1,16 @@
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.constants import MEDICINE_CATALOG
 from app.database import get_db
+from app.i18n.translations import get_instructions_library
 from app.models.user import User
 from app.schemas.prescription import (
+    InstructionSendRequest,
     MedicineCatalogResponse,
     PrescriptionCreate,
     PrescriptionResponse,
+    RxTemplateCreate,
 )
 from app.security.dependencies import require_roles
 from app.services.prescription_service import PrescriptionService, to_prescription_response
@@ -30,6 +33,37 @@ def get_rx_templates(
 ):
     """Retrieve reusable Auto-Prescription templates."""
     return PrescriptionService.get_templates(db)
+
+
+@router.post("/templates", status_code=status.HTTP_201_CREATED)
+def create_rx_template(
+    request: Request,
+    payload: RxTemplateCreate,
+    current_user: User = Depends(require_roles("admin", "doctor")),
+    db: Session = Depends(get_db),
+):
+    """Doctor/Admin: Create a reusable Auto-Prescription template."""
+    return PrescriptionService.create_template(db, data=payload, current_user=current_user, request=request)
+
+
+@router.get("/instructions-library")
+def get_localized_instructions_library(
+    language: str = Query(default="en", pattern="^(en|hi|pa)$"),
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+):
+    """Retrieve localized Pre-Appointment & Post-Treatment instructions in EN / HI / PA."""
+    return get_instructions_library(language)
+
+
+@router.post("/instructions/send")
+def send_treatment_instructions(
+    request: Request,
+    payload: InstructionSendRequest,
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Save localized care instruction to patient advisories and dispatch SMS/Email alert."""
+    return PrescriptionService.send_localized_instruction(db, data=payload, current_user=current_user, request=request)
 
 
 @router.get("", response_model=list[PrescriptionResponse])
@@ -57,7 +91,7 @@ def create_prescription(
     current_user: User = Depends(require_roles("doctor", "admin")),
     db: Session = Depends(get_db),
 ):
-    """Doctor/Admin: Generate a digital prescription with medication schedule."""
+    """Doctor/Admin: Generate a localized digital prescription with medication schedule."""
     rx = PrescriptionService.create_prescription(db, data=payload, current_user=current_user, request=request)
     return to_prescription_response(rx)
 
@@ -79,7 +113,7 @@ def download_prescription_pdf(
     current_user: User = Depends(require_roles("admin", "doctor", "student", "patient")),
     db: Session = Depends(get_db),
 ):
-    """Generate and stream PGI-branded prescription PDF (patients can only download visible prescriptions)."""
+    """Generate and stream PGI-branded prescription PDF with EN/HI/PA HarfBuzz shaping."""
     pdf_bytes = PrescriptionService.get_pdf(db, prescription_id, current_user=current_user)
     return Response(
         content=pdf_bytes,

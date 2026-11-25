@@ -5,6 +5,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_audit_event
+from app.constants import DOCUMENT_TYPES, TREATMENT_STAGES
 from app.models.document import Document
 from app.models.patient import Patient
 from app.models.user import User
@@ -64,10 +65,30 @@ class DocumentService:
     ) -> Document:
         patient = verify_patient_access(db, current_user, patient_id, require_write=True)
 
+        norm_doc_type = (document_type or "other").strip().lower()
+        if norm_doc_type not in DOCUMENT_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "INVALID_DOCUMENT_TYPE",
+                    "message": f"Invalid document_type '{document_type}'. Allowed: {DOCUMENT_TYPES}",
+                },
+            )
+
+        norm_stage = (treatment_stage or "initial_assessment").strip().lower()
+        if norm_stage not in TREATMENT_STAGES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "INVALID_TREATMENT_STAGE",
+                    "message": f"Invalid treatment_stage '{treatment_stage}'. Allowed: {TREATMENT_STAGES}",
+                },
+            )
+
         stored = await file_storage.save_encrypted_upload(
             patient_id=patient.id,
             file=file,
-            document_type=document_type,
+            document_type=norm_doc_type,
         )
 
         # Students cannot expose items to patient portal; only Doctors/Admin can toggle share
@@ -77,11 +98,11 @@ class DocumentService:
             patient_id=patient.id,
             clinical_record_id=clinical_record_id or visit_id,
             uploaded_by_user_id=current_user.id,
-            document_type=document_type,
+            document_type=norm_doc_type,
             title=title or stored.original_filename,
             description=description or notes,
             disease_category=disease_category,
-            treatment_stage=treatment_stage or "initial_assessment",
+            treatment_stage=norm_stage,
             media_date=media_date or date.today(),
             is_shared_with_patient=shared_flag,
             storage_key=stored.storage_key,
@@ -105,7 +126,8 @@ class DocumentService:
             patient_id=patient.id,
             details={
                 "patient_id": patient.id,
-                "type": document_type,
+                "type": norm_doc_type,
+                "treatment_stage": norm_stage,
                 "filename": stored.original_filename,
                 "sha256": stored.sha256_checksum,
             },
@@ -125,21 +147,47 @@ class DocumentService:
         return doc
 
     @staticmethod
-    def get_patient_documents(db: Session, patient_id: int, current_user: User) -> list[Document]:
-        verify_patient_access(db, current_user, patient_id)
-        return (
-            db.query(Document)
-            .filter(Document.patient_id == patient_id)
-            .order_by(desc(Document.media_date), desc(Document.created_at))
-            .all()
-        )
+    def get_patient_documents(
+        db: Session,
+        patient_id: int,
+        current_user: User,
+        *,
+        document_type: str | None = None,
+        treatment_stage: str | None = None,
+        disease_category: str | None = None,
+        media_date: date | None = None,
+    ) -> list[Document]:
+        verify_patient_access(db, current_user, patient_id, allow_patient_self=True)
+        query = db.query(Document).filter(Document.patient_id == patient_id)
+        if current_user.role == "patient":
+            query = query.filter(Document.is_shared_with_patient == True)
+        if document_type:
+            query = query.filter(Document.document_type == document_type.strip().lower())
+        if treatment_stage:
+            query = query.filter(Document.treatment_stage == treatment_stage.strip().lower())
+        if disease_category:
+            query = query.filter(Document.disease_category == disease_category.strip())
+        if media_date:
+            query = query.filter(Document.media_date == media_date)
+        return query.order_by(desc(Document.media_date), desc(Document.created_at)).all()
 
     @staticmethod
     def get_all_documents(
         db: Session,
         current_user: User,
+        *,
+        patient_id: int | None = None,
         document_type: str | None = None,
+        treatment_stage: str | None = None,
+        disease_category: str | None = None,
+        media_date: date | None = None,
     ) -> list[Document]:
+        if current_user.role in ("receptionist", "patient"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": "FORBIDDEN", "message": "Access to clinic document directory is restricted."},
+            )
+
         query = db.query(Document)
         if current_user.role == "student":
             stu = resolve_student_for_user(db, current_user)
@@ -152,14 +200,19 @@ class DocumentService:
             if not assigned_ids:
                 return []
             query = query.filter(Document.patient_id.in_(assigned_ids))
-        elif current_user.role in ("receptionist", "patient"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={"code": "FORBIDDEN", "message": "Access to clinic document directory is restricted."},
-            )
 
+        if patient_id is not None:
+            verify_patient_access(db, current_user, patient_id)
+            query = query.filter(Document.patient_id == patient_id)
         if document_type:
-            query = query.filter(Document.document_type == document_type)
+            query = query.filter(Document.document_type == document_type.strip().lower())
+        if treatment_stage:
+            query = query.filter(Document.treatment_stage == treatment_stage.strip().lower())
+        if disease_category:
+            query = query.filter(Document.disease_category == disease_category.strip())
+        if media_date:
+            query = query.filter(Document.media_date == media_date)
+
         return query.order_by(desc(Document.media_date), desc(Document.created_at)).all()
 
     @classmethod

@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.constants import APPOINTMENT_TYPES
@@ -15,8 +15,9 @@ from app.schemas.appointment import (
     AppointmentTypeResponse,
     AppointmentUpdate,
 )
-from app.security.dependencies import require_roles
+from app.security.dependencies import require_roles, verify_patient_access
 from app.services.appointment_service import AppointmentService
+from app.services.google_calendar_service import build_google_calendar_url, generate_ics_payload
 
 router = APIRouter(prefix="/appointments", tags=["Appointment Management"])
 
@@ -31,6 +32,8 @@ def _to_appointment_response(a: Appointment) -> AppointmentResponse:
     resp.dentist_name = resp.doctor_name
     resp.student_name = a.student.full_name if a.student else None
     resp.appointment_type_name = a.appointment_type
+    resp.google_calendar_url = build_google_calendar_url(a, a.patient, a.doctor)
+    resp.ics_url = f"/api/v1/appointments/{a.id}/ics"
     return resp
 
 
@@ -40,6 +43,43 @@ def get_appointment_types(
 ):
     """Retrieve catalog of appointment types with colors and default durations (zero fees)."""
     return [AppointmentTypeResponse(**t) for t in APPOINTMENT_TYPES]
+
+
+@router.get("/calendar")
+def get_smart_calendar(
+    target_date: date | None = Query(default=None, alias="date"),
+    view: str = Query(default="doctor", pattern="^(doctor|operatory)$"),
+    range_mode: str = Query(default="day", alias="range", pattern="^(day|week)$"),
+    current_user: User = Depends(require_roles("admin", "doctor", "student")),
+    db: Session = Depends(get_db),
+):
+    """Smart Calendar endpoint for Doctor-wise and Operatory-wise views (Day or Week)."""
+    day = target_date or date.today()
+    cal = AppointmentService.get_calendar_data(
+        db, current_user=current_user, target_date=day, view=view, range_mode=range_mode
+    )
+    if view == "operatory":
+        columns = [{"id": op, "label": op, "sublabel": "Dental Operatory"} for op in cal["operatories"]]
+    else:
+        columns = [
+            {
+                "id": d["id"],
+                "label": d["full_name"],
+                "sublabel": f"{d['specialization']} • {d['cabin_operatory']}",
+            }
+            for d in cal["doctors"]
+        ]
+    return {
+        "date": cal["date"],
+        "start_date": cal["start_date"],
+        "end_date": cal["end_date"],
+        "range": cal["range"],
+        "view": cal["view"],
+        "doctors": cal["doctors"],
+        "operatories": cal["operatories"],
+        "columns": columns,
+        "appointments": [_to_appointment_response(a) for a in cal["appointments"]],
+    }
 
 
 @router.get("", response_model=list[AppointmentResponse])
@@ -97,6 +137,23 @@ def log_missed_appointment(
     """Doctor/Admin: Log a missed patient or missed appointment directly from Doctor Dashboard."""
     appt = AppointmentService.log_missed_appointment(db, data=payload, current_user=current_user, request=request)
     return _to_appointment_response(appt)
+
+
+@router.get("/{appointment_id}/ics")
+def download_appointment_ics(
+    appointment_id: int,
+    current_user: User = Depends(require_roles("admin", "doctor", "student", "patient")),
+    db: Session = Depends(get_db),
+):
+    """Download RFC 5545 .ics calendar invite for Google Calendar / Apple Calendar / Outlook."""
+    appt = AppointmentService.get_appointment_by_id(db, appointment_id, current_user)
+    verify_patient_access(db, current_user, appt.patient_id, allow_patient_self=True)
+    ics_payload = generate_ics_payload(appt, appt.patient, appt.doctor)
+    return Response(
+        content=ics_payload,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="pgi_appointment_{appointment_id}.ics"'},
+    )
 
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)

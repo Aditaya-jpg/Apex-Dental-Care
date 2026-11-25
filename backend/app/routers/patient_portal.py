@@ -92,6 +92,8 @@ def get_portal_appointments(
 
     items = []
     for a in appts:
+        doc_display = a.doctor.full_name if a.doctor else "PGI Dental Specialist"
+        ics_path = f"/api/v1/appointments/{a.id}/ics"
         items.append({
             "id": a.id,
             "appointment_date": a.appointment_date.isoformat(),
@@ -100,11 +102,13 @@ def get_portal_appointments(
             "appointment_type": a.appointment_type,
             "operatory": a.operatory,
             "department": a.doctor.department if a.doctor else "Oral Health Sciences",
-            "doctor_name": a.doctor.full_name if a.doctor else "PGI Dental Specialist",
+            "doctor_name": doc_display,
+            "doctor_display_name": doc_display,
             "status": a.status,
             "attendance_status": a.attendance_status,
             "google_calendar_url": _build_google_calendar_url(a, patient),
-            "ics_url": f"/api/v1/appointments/{a.id}/ics",
+            "ics_url": ics_path,
+            "ics_download_url": ics_path,
             "pre_appointment_instructions": PRE_APPT_HINTS.get(lang, PRE_APPT_HINTS["en"]),
         })
 
@@ -142,18 +146,21 @@ def get_portal_prescriptions(
     prescriptions = []
     for rec in rx_records:
         payload = rec.payload_json or {}
+        doc_display = rec.doctor.full_name if rec.doctor else "PGI Dental Specialist"
         prescriptions.append({
             "id": rec.id,
             "prescription_number": payload.get("prescription_number") or f"RX-{rec.id}",
             "record_date": rec.record_date.isoformat(),
             "title": rec.title or "Dental Prescription",
             "language": rec.language or patient.preferred_language or "en",
-            "doctor_name": rec.doctor.full_name if rec.doctor else "PGI Dental Specialist",
+            "doctor_name": doc_display,
+            "doctor_display_name": doc_display,
             "diagnosis_summary": payload.get("diagnosis_summary"),
             "general_instructions": payload.get("general_instructions"),
             "treatment_instructions": payload.get("treatment_instructions"),
             "localized_summary": payload.get("localized_summary"),
             "medications": payload.get("medications", []),
+            "items": payload.get("medications", []),
             "pdf_url": f"/api/v1/prescriptions/{rec.id}/pdf",
             "created_at": rec.created_at.isoformat(),
         })
@@ -232,9 +239,12 @@ def get_portal_shared_items(
             "created_at": d.created_at.isoformat(),
         })
 
+    advisories_list = list(patient.patient_shared_notices_json or [])
     return {
         "patient_name": patient.full_name,
         "cr_number": patient.cr_number,
-        "advisories": list(patient.patient_shared_notices_json or []),
+        "advisories": advisories_list,
+        "notices": advisories_list,
         "shared_documents": docs_payload,
+        "documents": docs_payload,
     }

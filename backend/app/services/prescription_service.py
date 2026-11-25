@@ -1,19 +1,29 @@
-from datetime import date
+from datetime import UTC, date, datetime
+from typing import Any
+import uuid
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.audit.service import log_audit_event
+from app.i18n.translations import (
+    get_prescription_labels,
+    localize_medication_item,
+    lookup_instruction,
+    normalize_language,
+)
 from app.models.clinical_record import ClinicalRecord
 from app.models.doctor import Doctor
 from app.models.patient import Patient
 from app.models.user import User
 from app.pdf.generator import generate_prescription_pdf
 from app.schemas.prescription import (
+    InstructionSendRequest,
     PrescriptionCreate,
     PrescriptionItemResponse,
     PrescriptionResponse,
+    RxTemplateCreate,
 )
 from app.security.dependencies import (
     resolve_doctor_for_user,
@@ -95,15 +105,30 @@ class PrescriptionService:
                     detail={"code": "DOCTOR_NOT_FOUND", "message": "Doctor not found."},
                 )
 
+        lang = normalize_language(data.language or patient.preferred_language)
         rx_number = cls._generate_rx_number(db)
-        meds_payload = [item.model_dump() for item in data.items]
+
+        meds_payload: list[dict[str, Any]] = []
+        for item in data.items:
+            m_dict = item.model_dump()
+            if not m_dict.get("localized_instructions"):
+                m_dict["localized_instructions"] = localize_medication_item(m_dict, lang)
+            meds_payload.append(m_dict)
+
+        labels = get_prescription_labels(lang)
+        localized_summary = (
+            data.treatment_instructions
+            or data.general_instructions
+            or f"{labels['prescription_title']} ({len(meds_payload)} items)"
+        )
+
         payload_json = {
             "prescription_number": rx_number,
             "template_name": data.template_name,
             "diagnosis_summary": data.diagnosis_summary,
             "general_instructions": data.general_instructions,
             "treatment_instructions": data.treatment_instructions,
-            "localized_summary": data.treatment_instructions or data.general_instructions,
+            "localized_summary": localized_summary,
             "medications": meds_payload,
         }
 
@@ -116,7 +141,7 @@ class PrescriptionService:
             record_date=date.today(),
             title=data.template_name or data.diagnosis_summary or f"Prescription {rx_number}",
             status="issued",
-            language=data.language or patient.preferred_language or "en",
+            language=lang,
             is_visible_to_patient=data.is_visible_to_patient,
             payload_json=payload_json,
         )
@@ -131,7 +156,7 @@ class PrescriptionService:
             entity_name="Prescription",
             entity_id=str(rx.id),
             patient_id=patient.id,
-            details={"rx_number": rx_number, "items_count": len(data.items)},
+            details={"rx_number": rx_number, "language": lang, "items_count": len(data.items)},
             request=request,
         )
 
@@ -209,6 +234,138 @@ class PrescriptionService:
             }
             for t in templates
         ]
+
+    @staticmethod
+    def create_template(
+        db: Session,
+        data: RxTemplateCreate,
+        current_user: User,
+        request: Request | None = None,
+    ) -> dict[str, Any]:
+        doc = resolve_doctor_for_user(db, current_user)
+        lang = normalize_language(data.language)
+        tpl = ClinicalRecord(
+            patient_id=None,
+            doctor_id=doc.id if doc else None,
+            record_type="rx_template",
+            record_date=date.today(),
+            title=data.template_name.strip(),
+            status="active",
+            language=lang,
+            is_visible_to_patient=False,
+            payload_json={
+                "template_name": data.template_name.strip(),
+                "diagnosis_summary": data.diagnosis_summary,
+                "general_instructions": data.general_instructions,
+                "medications": [m.model_dump() for m in data.medications],
+            },
+        )
+        db.add(tpl)
+        db.commit()
+        db.refresh(tpl)
+
+        log_audit_event(
+            db=db,
+            action="RX_TEMPLATE_CREATE",
+            user=current_user,
+            entity_name="RxTemplate",
+            entity_id=str(tpl.id),
+            details={"template_name": tpl.title, "items": len(data.medications)},
+            request=request,
+        )
+        return {
+            "id": tpl.id,
+            "title": tpl.title,
+            "language": tpl.language,
+            **(tpl.payload_json or {}),
+        }
+
+    @staticmethod
+    def send_localized_instruction(
+        db: Session,
+        data: InstructionSendRequest,
+        current_user: User,
+        request: Request | None = None,
+    ) -> dict[str, Any]:
+        patient = verify_patient_access(db, current_user, data.patient_id, require_write=True)
+        lang = normalize_language(data.language or patient.preferred_language)
+
+        resolved_category = data.category
+        resolved_title = data.title or "Treatment Care Instructions"
+        resolved_text = ""
+
+        if data.instruction_key:
+            found = lookup_instruction(data.instruction_key, lang)
+            if not found:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"code": "INSTRUCTION_NOT_FOUND", "message": f"Instruction key '{data.instruction_key}' not found."},
+                )
+            resolved_category, looked_title, resolved_text = found
+            if not data.title:
+                resolved_title = looked_title
+
+        if data.custom_text:
+            resolved_text = (
+                f"{resolved_text} {data.custom_text}".strip()
+                if (resolved_text and data.custom_text.strip() != resolved_text.strip())
+                else data.custom_text.strip()
+            )
+
+        if not resolved_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"code": "INSTRUCTION_TEXT_REQUIRED", "message": "Provide instruction_key or custom_text."},
+            )
+
+        notices = list(patient.patient_shared_notices_json or [])
+        notice = {
+            "id": f"instr-{uuid.uuid4().hex[:8]}",
+            "category": resolved_category,
+            "instruction_key": data.instruction_key,
+            "title": resolved_title,
+            "message": resolved_text,
+            "language": lang,
+            "created_by": current_user.full_name,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        notices.insert(0, notice)
+        patient.patient_shared_notices_json = notices
+        db.commit()
+        db.refresh(patient)
+
+        from app.services.notification_service import NotificationService
+
+        notif = NotificationService.dispatch_notification(
+            db,
+            patient_id=patient.id,
+            channel=data.channel,
+            category=resolved_category,
+            title=resolved_title,
+            message_body=resolved_text,
+            language=lang,
+            actor_user=current_user,
+            extra_payload={"instruction_key": data.instruction_key, "notice_id": notice["id"]},
+        )
+
+        log_audit_event(
+            db=db,
+            action="INSTRUCTION_SEND",
+            user=current_user,
+            entity_name="Patient",
+            entity_id=str(patient.id),
+            patient_id=patient.id,
+            details={"instruction_key": data.instruction_key, "language": lang, "notification_id": notif.id},
+            request=request,
+        )
+
+        return {
+            "patient_id": patient.id,
+            "notice": notice,
+            "notification_id": notif.id,
+            "status": notif.status,
+            "language": lang,
+        }
 
     @classmethod
     def get_pdf(cls, db: Session, prescription_id: int, current_user: User) -> bytes:

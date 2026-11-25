@@ -60,25 +60,39 @@ def _build_restorative_chart(special_teeth: dict[int, dict]) -> dict:
 
 def _build_perio_chart() -> dict:
     now_iso = datetime.now(UTC).isoformat()
+    t16_depths = {"mb": 5, "b": 4, "db": 6, "ml": 4, "l": 3, "dl": 5}
+    t36_depths = {"mb": 4, "b": 3, "db": 4, "ml": 3, "l": 3, "dl": 4}
     teeth = {
         "16": {
-            "sites": {"MB": 5, "B": 4, "DB": 6, "ML": 4, "L": 3, "DL": 5},
-            "recession": {"MB": 1, "B": 1, "DB": 2, "ML": 0, "L": 0, "DL": 1},
-            "bop": {"MB": True, "B": False, "DB": True, "ML": False, "L": False, "DL": True},
-            "mobility": "I",
-            "furcation": "I",
+            "probing_depths": t16_depths,
+            "sites": t16_depths,
+            "recession": {"mb": 1, "b": 1, "db": 2, "ml": 0, "l": 0, "dl": 1},
+            "bop": {"mb": True, "b": False, "db": True, "ml": False, "l": False, "dl": True},
+            "mobility": 1,
+            "furcation": 1,
         },
         "36": {
-            "sites": {"MB": 4, "B": 3, "DB": 4, "ML": 3, "L": 3, "DL": 4},
-            "recession": {"MB": 0, "B": 0, "DB": 1, "ML": 0, "L": 0, "DL": 0},
-            "bop": {"MB": True, "B": False, "DB": False, "ML": False, "L": False, "DL": False},
-            "mobility": "0",
-            "furcation": "0",
+            "probing_depths": t36_depths,
+            "sites": t36_depths,
+            "recession": {"mb": 0, "b": 0, "db": 1, "ml": 0, "l": 0, "dl": 0},
+            "bop": {"mb": True, "b": False, "db": False, "ml": False, "l": False, "dl": False},
+            "mobility": 0,
+            "furcation": 0,
         },
     }
     return {
         "teeth": teeth,
-        "summary": {"mean_ppd": 4.0, "max_ppd": 6, "bop_percentage": 33.3, "deep_pockets_ge_4mm": 8},
+        "plaque_index": "Fair (28%)",
+        "notes": "Baseline 6-site periodontal charting completed.",
+        "summary": {
+            "mean_ppd": 4.0,
+            "bop_percentage": 33.3,
+            "deepest_pocket": 6,
+            "max_ppd": 6,
+            "sites_ge_4mm": 8,
+            "sites_ge_6mm": 1,
+            "deep_pockets_ge_4mm": 8,
+        },
         "snapshots": [
             {
                 "recorded_at": now_iso,
@@ -815,6 +829,18 @@ def seed_database(db=None):
             payload_json={"reason": "Post-op surgical review", "notes": "Assess healing and remove 3-0 silk sutures."},
         ),
         CareAndSystemLog(
+            event_type="followup",
+            patient_id=patient_objs[12].id,
+            actor_user_id=doctor_users[2].id,
+            assigned_doctor_id=doctor_objs[2].id,
+            status="pending",
+            scheduled_date=today - timedelta(days=10),  # >7 days overdue followup for slipping tracker
+            channel="system",
+            language="pa",
+            title="Periodontal scaling recall (>7 days overdue)",
+            payload_json={"reason": "Overdue periodontal maintenance", "notes": "Contact patient for periodontal review."},
+        ),
+        CareAndSystemLog(
             event_type="recall",
             patient_id=patient_objs[2].id,
             actor_user_id=doctor_users[2].id,
@@ -843,11 +869,13 @@ def seed_database(db=None):
             patient_id=None,
             actor_user_id=doctor_users[0].id,
             assigned_doctor_id=doctor_objs[0].id,
+            assigned_student_id=student_objs[0].id,
             status="open",
             scheduled_date=today,
             channel="phone",
             language="hi",
             title="Telephonic Enquiry — Root Canal Consultation",
+            created_at=now - timedelta(days=5),  # >3 days uncontacted open enquiry
             payload_json={
                 "caller_name": "Suresh Aggarwal",
                 "phone": "+91 98140 55111",

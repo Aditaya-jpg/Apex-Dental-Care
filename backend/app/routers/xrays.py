@@ -24,7 +24,7 @@ ORAL3D_URL = os.environ.get("ORAL3D_URL", "http://127.0.0.1:8001")
 
 @router.get("/status", response_model=XrayEngineStatus)
 async def get_oral3d_status(
-    current_user: User = Depends(require_roles("doctor", "admin")),
+    current_user: User = Depends(require_roles("doctor", "admin", "student")),
 ):
     """Check connectivity and neural model status of the Oral-3D AI reconstruction engine."""
     try:
@@ -100,7 +100,7 @@ async def reconstruct_3d_teeth(
     threshold: float = Form(-0.45),
     resolution: str = Form("hd"),
     save_to_patient: bool = Form(False),
-    current_user: User = Depends(require_roles("doctor", "admin")),
+    current_user: User = Depends(require_roles("doctor", "admin", "student")),
     db: Session = Depends(get_db),
 ):
     """Execute Oral-3D neural network inference on 2D panoramic radiograph."""
@@ -149,6 +149,9 @@ async def reconstruct_3d_teeth(
     if save_to_patient and patient_id:
         session_id = result.get("session_id", "unknown")
         glb_url = result.get("model_urls", {}).get("glb", "")
+        safe_key = glb_url.lstrip("/") if (glb_url and not glb_url.startswith("http")) else f"oral3d/{session_id}_teeth.glb"
+        if ".." in safe_key:
+            safe_key = f"oral3d/{session_id}_teeth.glb"
         metrics = result.get("metrics", {})
         meta_json = json.dumps({
             "type": "Oral-3D Reconstruction",
@@ -166,7 +169,7 @@ async def reconstruct_3d_teeth(
             treatment_stage="initial_assessment",
             media_date=date.today(),
             is_shared_with_patient=False,
-            storage_key=glb_url or f"oral3d/{session_id}_teeth.glb",
+            storage_key=safe_key,
             original_filename=f"Oral3D_Teeth_Model_{session_id}.glb",
             mime_type="model/gltf-binary",
             file_size_bytes=int(metrics.get("vertices", 0) * 32),
@@ -197,7 +200,7 @@ async def get_slice(
     session_id: str,
     plane: str = "axial",
     index: int = 80,
-    current_user: User = Depends(require_roles("doctor", "admin")),
+    current_user: User = Depends(require_roles("doctor", "admin", "student")),
 ):
     """Dynamic Multi-Planar Reconstruction (MPR) slice navigation."""
     try:
@@ -216,7 +219,7 @@ async def get_slice(
 async def save_reconstruction_to_patient(
     payload: XraySaveToPatientRequest,
     request: Request,
-    current_user: User = Depends(require_roles("doctor", "admin")),
+    current_user: User = Depends(require_roles("doctor", "admin", "student")),
     db: Session = Depends(get_db),
 ):
     """Persist an existing 3D reconstruction session and biometrics into a patient's clinical file."""
@@ -228,6 +231,10 @@ async def save_reconstruction_to_patient(
         "model_urls": payload.model_urls,
         "input_scan_url": payload.input_scan_url,
     })
+    raw_glb = payload.model_urls.get("glb", "") if payload.model_urls else ""
+    safe_key = raw_glb.lstrip("/") if (raw_glb and not raw_glb.startswith("http")) else f"oral3d/{payload.session_id}_teeth.glb"
+    if ".." in safe_key:
+        safe_key = f"oral3d/{payload.session_id}_teeth.glb"
 
     doc = Document(
         patient_id=patient.id,
@@ -238,7 +245,7 @@ async def save_reconstruction_to_patient(
         treatment_stage="initial_assessment",
         media_date=date.today(),
         is_shared_with_patient=False,
-        storage_key=payload.model_urls.get("glb", "") or f"oral3d/{payload.session_id}_teeth.glb",
+        storage_key=safe_key,
         original_filename=f"{payload.title} ({payload.session_id}).glb",
         mime_type="model/gltf-binary",
         file_size_bytes=int(payload.metrics.get("vertices", 0) * 32),

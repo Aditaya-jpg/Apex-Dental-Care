@@ -67,3 +67,40 @@ class PrescriptionResponse(BaseModel):
     patient_name: str | None = None
     items: list[PrescriptionItemResponse] = []
     model_config = ConfigDict(from_attributes=True)
+
+
+class RxTemplateCreate(BaseModel):
+    template_name: str = Field(min_length=1, max_length=255)
+    diagnosis_summary: str | None = None
+    general_instructions: str | None = None
+    language: str = Field(default="en", pattern="^(en|hi|pa)$")
+    medications: list[PrescriptionItemCreate] | None = None
+    items: list[PrescriptionItemCreate] | None = None
+
+    @model_validator(mode="after")
+    def _normalize_items(self):
+        if not self.medications and self.items:
+            self.medications = self.items
+        if not self.medications:
+            raise ValueError("medications (or items) must contain at least one item")
+        return self
+
+
+class InstructionSendRequest(BaseModel):
+    patient_id: int
+    instruction_key: str | None = None
+    template_key: str | None = None
+    title: str | None = None
+    custom_text: str | None = None
+    content: str | None = None
+    language: str = Field(default="en", pattern="^(en|hi|pa)$")
+    category: str = "care_instruction"
+    channel: str = Field(default="sms", pattern="^(sms|email|portal)$")
+
+    @model_validator(mode="after")
+    def _normalize_fields(self):
+        if not self.instruction_key and self.template_key:
+            self.instruction_key = self.template_key
+        if not self.custom_text and self.content:
+            self.custom_text = self.content
+        return self

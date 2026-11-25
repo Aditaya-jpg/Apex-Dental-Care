@@ -72,9 +72,21 @@ class AppointmentMissedCreate(BaseModel):
     doctor_id: int | None = None
     operatory: str = "Operatory 1"
     appointment_date: date | None = None
+    missed_date: date | None = None
     start_time: time | None = None
     end_time: time | None = None
-    missed_reason: str = "Patient missed scheduled appointment"
+    missed_reason: str | None = None
+    reason: str | None = None
+    notes: str | None = None
+    send_recall: bool = False
+
+    @model_validator(mode="after")
+    def _normalize_reason(self):
+        if not self.missed_reason:
+            self.missed_reason = self.reason or self.notes or "Patient missed scheduled appointment"
+        if not self.appointment_date and self.missed_date:
+            self.appointment_date = self.missed_date
+        return self
 
 
 class AppointmentResponse(BaseModel):
@@ -94,6 +106,8 @@ class AppointmentResponse(BaseModel):
     is_missed: bool = False
     missed_reason: str | None = None
     google_event_id: str | None = None
+    google_calendar_url: str | None = None
+    ics_url: str | None = None
     reason: str | None = None
     cancellation_reason: str | None = None
     notes: str | None = None

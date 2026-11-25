@@ -1,183 +1,183 @@
 const BASE_URL = '/api/v1';
 
 const getSafeLocalStorage = (): Storage | null => {
-  try {
-    if (
-      typeof window !== 'undefined' &&
-      window.localStorage &&
-      typeof window.localStorage.getItem === 'function'
-    ) {
-      return window.localStorage;
+    try {
+        if (
+            typeof window !== 'undefined' &&
+            window.localStorage &&
+            typeof window.localStorage.getItem === 'function'
+        ) {
+            return window.localStorage;
+        }
+    } catch {
+        // Storage unavailable in restricted test/sandbox context
     }
-  } catch {
-    // Storage unavailable in restricted test/sandbox context
-  }
-  return null;
+    return null;
 };
 
 let currentAccessToken: string | null = getSafeLocalStorage()?.getItem('access_token') ?? null;
 
 export const setAccessToken = (token: string | null) => {
-  currentAccessToken = token;
-  const storage = getSafeLocalStorage();
-  if (!storage) return;
-  if (token) {
-    storage.setItem('access_token', token);
-  } else {
-    storage.removeItem('access_token');
-  }
+    currentAccessToken = token;
+    const storage = getSafeLocalStorage();
+    if (!storage) return;
+    if (token) {
+        storage.setItem('access_token', token);
+    } else {
+        storage.removeItem('access_token');
+    }
 };
 
 export const getAccessToken = () => currentAccessToken;
 
 interface RequestOptions extends RequestInit {
-  params?: Record<string, string | number | boolean | undefined>;
+    params?: Record<string, string | number | boolean | undefined>;
 }
 
 export class ApiError extends Error {
-  code: string;
-  details?: any;
-  status: number;
+    code: string;
+    details?: any;
+    status: number;
 
-  constructor(status: number, code: string, message: string, details?: any) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
-    this.details = details;
-  }
+    constructor(status: number, code: string, message: string, details?: any) {
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        this.code = code;
+        this.details = details;
+    }
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { params, headers, ...customConfig } = options;
+    const { params, headers, ...customConfig } = options;
 
-  let url = `${BASE_URL}${endpoint}`;
-  if (params) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') {
-        searchParams.append(key, String(value));
-      }
-    });
-    const queryString = searchParams.toString();
-    if (queryString) {
-      url += `?${queryString}`;
-    }
-  }
-
-  const reqHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(headers as Record<string, string>),
-  };
-
-  if (currentAccessToken) {
-    reqHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
-  }
-
-  const response = await fetch(url, {
-    ...customConfig,
-    headers: reqHeaders,
-  });
-
-  if (!response.ok) {
-    let errorCode = 'REQUEST_FAILED';
-    let errorMessage = `Request failed with status ${response.status}`;
-    let errorDetails = null;
-
-    try {
-      const errorJson = await response.json();
-      if (errorJson.error) {
-        errorCode = errorJson.error.code || errorCode;
-        errorMessage = errorJson.error.message || errorMessage;
-        errorDetails = errorJson.error.details || null;
-      } else if (errorJson.detail) {
-        if (typeof errorJson.detail === 'string') {
-          errorMessage = errorJson.detail;
-        } else if (errorJson.detail.message) {
-          errorCode = errorJson.detail.code || errorCode;
-          errorMessage = errorJson.detail.message;
+    let url = `${BASE_URL}${endpoint}`;
+    if (params) {
+        const searchParams = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                searchParams.append(key, String(value));
+            }
+        });
+        const queryString = searchParams.toString();
+        if (queryString) {
+            url += `?${queryString}`;
         }
-      }
-    } catch {
-      // Non-JSON response
     }
 
-    if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh')) {
-      setAccessToken(null);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('auth:expired'));
-      }
+    const reqHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(headers as Record<string, string>),
+    };
+
+    if (currentAccessToken) {
+        reqHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
     }
 
-    throw new ApiError(response.status, errorCode, errorMessage, errorDetails);
-  }
+    const response = await fetch(url, {
+        ...customConfig,
+        headers: reqHeaders,
+    });
 
-  if (response.status === 204) {
-    return {} as T;
-  }
+    if (!response.ok) {
+        let errorCode = 'REQUEST_FAILED';
+        let errorMessage = `Request failed with status ${response.status}`;
+        let errorDetails = null;
 
-  return response.json();
+        try {
+            const errorJson = await response.json();
+            if (errorJson.error) {
+                errorCode = errorJson.error.code || errorCode;
+                errorMessage = errorJson.error.message || errorMessage;
+                errorDetails = errorJson.error.details || null;
+            } else if (errorJson.detail) {
+                if (typeof errorJson.detail === 'string') {
+                    errorMessage = errorJson.detail;
+                } else if (errorJson.detail.message) {
+                    errorCode = errorJson.detail.code || errorCode;
+                    errorMessage = errorJson.detail.message;
+                }
+            }
+        } catch {
+            // Non-JSON response
+        }
+
+        if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh')) {
+            setAccessToken(null);
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('auth:expired'));
+            }
+        }
+
+        throw new ApiError(response.status, errorCode, errorMessage, errorDetails);
+    }
+
+    if (response.status === 204) {
+        return {} as T;
+    }
+
+    return response.json();
 }
 
 export const api = {
-  get: <T>(endpoint: string, params?: Record<string, any>) =>
-    request<T>(endpoint, { method: 'GET', params }),
+    get: <T>(endpoint: string, params?: Record<string, any>) =>
+        request<T>(endpoint, { method: 'GET', params }),
 
-  post: <T>(endpoint: string, body?: any, params?: Record<string, any>) =>
-    request<T>(endpoint, {
-      method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
-      params,
-    }),
+    post: <T>(endpoint: string, body?: any, params?: Record<string, any>) =>
+        request<T>(endpoint, {
+            method: 'POST',
+            body: body ? JSON.stringify(body) : undefined,
+            params,
+        }),
 
-  put: <T>(endpoint: string, body?: any) =>
-    request<T>(endpoint, {
-      method: 'PUT',
-      body: body ? JSON.stringify(body) : undefined,
-    }),
+    put: <T>(endpoint: string, body?: any) =>
+        request<T>(endpoint, {
+            method: 'PUT',
+            body: body ? JSON.stringify(body) : undefined,
+        }),
 
-  patch: <T>(endpoint: string, body?: any) =>
-    request<T>(endpoint, {
-      method: 'PATCH',
-      body: body ? JSON.stringify(body) : undefined,
-    }),
+    patch: <T>(endpoint: string, body?: any) =>
+        request<T>(endpoint, {
+            method: 'PATCH',
+            body: body ? JSON.stringify(body) : undefined,
+        }),
 
-  delete: <T>(endpoint: string) =>
-    request<T>(endpoint, { method: 'DELETE' }),
+    delete: <T>(endpoint: string) =>
+        request<T>(endpoint, { method: 'DELETE' }),
 
-  upload: async <T>(endpoint: string, formData: FormData): Promise<T> => {
-    const reqHeaders: Record<string, string> = {};
-    if (currentAccessToken) {
-      reqHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
-    }
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      method: 'POST',
-      body: formData,
-      headers: reqHeaders,
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new ApiError(
-        response.status,
-        err.error?.code || err.detail?.code || 'UPLOAD_FAILED',
-        err.error?.message || err.detail?.message || err.detail || 'File upload failed'
-      );
-    }
-    return response.json();
-  },
+    upload: async <T>(endpoint: string, formData: FormData): Promise<T> => {
+        const reqHeaders: Record<string, string> = {};
+        if (currentAccessToken) {
+            reqHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
+        }
+        const response = await fetch(`${BASE_URL}${endpoint}`, {
+            method: 'POST',
+            body: formData,
+            headers: reqHeaders,
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new ApiError(
+                response.status,
+                err.error?.code || err.detail?.code || 'UPLOAD_FAILED',
+                err.error?.message || err.detail?.message || err.detail || 'File upload failed'
+            );
+        }
+        return response.json();
+    },
 
-  downloadBlob: async (endpoint: string): Promise<Blob> => {
-    const reqHeaders: Record<string, string> = {};
-    if (currentAccessToken) {
-      reqHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
-    }
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers: reqHeaders,
-    });
-    if (!response.ok) {
-      throw new ApiError(response.status, 'DOWNLOAD_FAILED', 'Failed to download file');
-    }
-    return response.blob();
-  },
+    downloadBlob: async (endpoint: string): Promise<Blob> => {
+        const reqHeaders: Record<string, string> = {};
+        if (currentAccessToken) {
+            reqHeaders['Authorization'] = `Bearer ${currentAccessToken}`;
+        }
+        const response = await fetch(`${BASE_URL}${endpoint}`, {
+            method: 'GET',
+            headers: reqHeaders,
+        });
+        if (!response.ok) {
+            throw new ApiError(response.status, 'DOWNLOAD_FAILED', 'Failed to download file');
+        }
+        return response.blob();
+    },
 };

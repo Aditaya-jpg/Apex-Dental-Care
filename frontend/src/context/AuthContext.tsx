@@ -4,101 +4,101 @@ import { authApi } from '../api/auth';
 import { getAccessToken, setAccessToken } from '../api/client';
 
 interface AuthContextType {
-  user: User | null;
-  role: Role | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (username: string, pass: string) => Promise<User>;
-  logout: () => Promise<void>;
-  hasRole: (...roles: Role[]) => boolean;
+    user: User | null;
+    role: Role | null;
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    login: (username: string, pass: string) => Promise<User>;
+    logout: () => Promise<void>;
+    hasRole: (...roles: Role[]) => boolean;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [user, setUser] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const fetchProfile = async () => {
-    try {
-      if (getAccessToken()) {
-        const u = await authApi.getMe();
-        setUser(u);
-      }
-    } catch {
-      setUser(null);
-      setAccessToken(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchProfile();
-
-    const handleExpired = () => {
-      setUser(null);
+    const fetchProfile = async () => {
+        try {
+            if (getAccessToken()) {
+                const u = await authApi.getMe();
+                setUser(u);
+            }
+        } catch {
+            setUser(null);
+            setAccessToken(null);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    window.addEventListener('auth:expired', handleExpired);
-    return () => window.removeEventListener('auth:expired', handleExpired);
-  }, []);
+    useEffect(() => {
+        fetchProfile();
 
-  const login = async (username: string, pass: string): Promise<User> => {
-    setIsLoading(true);
-    try {
-      const res = await authApi.login(username, pass);
-      setUser(res.user);
-      return res.user;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+        const handleExpired = () => {
+            setUser(null);
+        };
 
-  const logout = async () => {
-    setIsLoading(true);
-    try {
-      await authApi.logout();
-    } finally {
-      setUser(null);
-      setIsLoading(false);
-    }
-  };
+        window.addEventListener('auth:expired', handleExpired);
+        return () => window.removeEventListener('auth:expired', handleExpired);
+    }, []);
 
-  const hasRole = (...roles: Role[]) => {
-    if (!user) return false;
-    if (user.role === 'admin' || user.is_admin === true) return true;
-    if (roles.includes(user.role)) return true;
-    if (
-      (user.role === 'doctor' || user.role === 'dentist') &&
-      (roles.includes('doctor') || roles.includes('dentist'))
-    ) {
-      return true;
-    }
-    return false;
-  };
+    const login = async (username: string, pass: string): Promise<User> => {
+        setIsLoading(true);
+        try {
+            const res = await authApi.login(username, pass);
+            setUser(res.user);
+            return res.user;
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        role: user?.role || null,
-        isAuthenticated: !!user,
-        isLoading,
-        login,
-        logout,
-        hasRole,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+    const logout = async () => {
+        setIsLoading(true);
+        try {
+            await authApi.logout();
+        } finally {
+            setUser(null);
+            setIsLoading(false);
+        }
+    };
+
+    const hasRole = (...roles: Role[]) => {
+        if (!user) return false;
+        if (user.role === 'admin' || user.is_admin === true) return true;
+        if (roles.includes(user.role)) return true;
+        if (
+            (user.role === 'doctor' || user.role === 'dentist') &&
+            (roles.includes('doctor') || roles.includes('dentist'))
+        ) {
+            return true;
+        }
+        return false;
+    };
+
+    return (
+        <AuthContext.Provider
+            value={{
+                user,
+                role: user?.role || null,
+                isAuthenticated: !!user,
+                isLoading,
+                login,
+                logout,
+                hasRole,
+            }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
 };
 
 export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+    const context = useContext(AuthContext);
+    if (!context) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 };

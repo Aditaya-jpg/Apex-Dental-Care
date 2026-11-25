@@ -296,4 +296,15 @@ class TreatmentService:
             request=request,
         )
 
+        if update_dict.get("status") == "completed" and target_plan.patient:
+            from app.services.notification_service import NotificationService
+
+            NotificationService.send_post_treatment_instruction(
+                db,
+                patient=target_plan.patient,
+                procedure_name=item.get("procedure_name") or "Dental Treatment",
+                custom_instructions=item.get("notes"),
+                actor_user=current_user,
+            )
+
         return _to_item_response(target_plan.id, item)
