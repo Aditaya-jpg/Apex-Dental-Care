@@ -134,11 +134,15 @@ Mounted under `/api/v1/xrays`:
 
 ## 🚀 Quick Start Guide
 
-### One-Click Startup (Windows)
-Run `start.bat` from the root directory:
-```cmd
-start.bat
-```
+### One-Click Startup (macOS / Linux / Windows)
+- **macOS / Linux:**
+  ```bash
+  ./start.sh
+  ```
+- **Windows:**
+  ```cmd
+  start.bat
+  ```
 This automatically launches:
 1. **Oral-3D AI Reconstruction Engine:** `http://127.0.0.1:8001` (FastAPI + PyTorch)
 2. **PGI Dental Backend:** `http://127.0.0.1:8000` (FastAPI + SQLAlchemy)

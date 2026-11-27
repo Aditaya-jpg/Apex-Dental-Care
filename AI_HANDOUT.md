@@ -76,7 +76,7 @@ c6de67f  feat(frontend): PGI Dental responsive UI, EMR, PerioChart, Smart Calend
 
 ## 6. What Is Done ✅
 
-### Phase 1 & 2 — Backend Foundation (COMPLETE, 41 pytest tests pass)
+### Phase 1 & 2 — Backend Foundation (COMPLETE, 42 pytest tests pass)
 - **8-table schema** consolidated — billing/payment/invoice tables removed
 - **Alembic migration** `001_pgi_8_table_schema.py` runs clean
 - **AES-256-GCM file vault** — `backend/app/storage/file_storage.py`
@@ -116,7 +116,7 @@ All new routers are **mounted** in `backend/app/main.py`:
 - `backend/app/routers/integrations.py` — `/integrations/social-settings`, `/integrations/whatsapp-link/{id}`
 - `backend/app/services/google_calendar_service.py` — ICS RFC 5545, Google Calendar template URLs
 - `backend/app/services/notification_service.py` — sandbox SMS/email dispatch, `SMS_SENDER_ID="PGIDNT"`
-- `backend/app/i18n/__init__.py` + `translations.py` — full EN/HI/PA strings (43KB)
+- `backend/app/i18n/__init__.py` + `translations.py` — full EN/HI/PA strings + `translate_clinical_text` dynamic translation with caching & fallback
 
 ### Updated Routers (Phase 3–5 additions committed)
 - `routers/patients.py` — `scope`, `severity`, `categories`, `keyword`, `age_group` filters; `PATCH /patients/{id}/severity`; card/consent upload; surgical-logs; miscellaneous; shared-notices
@@ -130,7 +130,7 @@ All new routers are **mounted** in `backend/app/main.py`:
 ## 7. Verification Status ✅
 
 - **PDF Generator (`backend/app/pdf/generator.py`):** HarfBuzz OpenType shaping (`uharfbuzz` + `fonttools` `ShapedParagraph`) with bundled Noto Sans, Devanagari, and Gurmukhi fonts is integrated and verified in both pytest and live PDF downloads.
-- **Backend Tests (`cd backend && .venv/bin/pytest -v`):** **41 / 41 tests pass** (`test_phase1_phase2.py`, `test_phase3_phase4_phase5.py`, and all core suites).
+- **Backend Tests (`cd backend && .venv/bin/pytest -v`):** **42 / 42 tests pass** (`test_phase1_phase2.py`, `test_phase3_phase4_phase5.py`, and all core suites).
 - **Frontend (`cd frontend && npm run lint && npm run test && npm run build`):** `tsc --noEmit`, **8 / 8 Vitest tests**, and `vite build` all pass.
 - **Live Browser E2E Verification:** Executed across all 5 roles (`admin`, `dr.mehta`, `dr.sharma`, `student1`, `reception`, `patient`) and `1440x900` / `768x1024` / `390x844` viewports (**45 / 45 Playwright checks passed**, 0 unexpected console/page/HTTP errors). QA screenshots are stored in `qa_screenshots/`.
 - **Rubric R1–R13:** All 13 rubric requirements verified end-to-end.
@@ -167,7 +167,7 @@ Apex-Dental-Care/
 │   │   ├── services/                ← Business logic
 │   │   ├── security/                ← JWT, RBAC, verify_patient_access
 │   │   ├── storage/file_storage.py  ← AES-256-GCM vault
-│   │   ├── i18n/translations.py     ← EN/HI/PA strings (43KB)
+│   │   ├── i18n/translations.py     ← EN/HI/PA strings + dynamic clinical translation
 │   │   └── pdf/
 │   │       ├── generator.py         ← HarfBuzz shaping integrated ✅
 │   │       └── fonts/               ← NotoSans + NotoSansDevanagari + NotoSansGurmukhi TTFs
@@ -175,7 +175,7 @@ Apex-Dental-Care/
 │   ├── seeds/seed_data.py
 │   ├── tests/
 │   │   ├── test_phase1_phase2.py    ← PASS ✅
-│   │   └── test_phase3_phase4_phase5.py  ← PASS ✅ (41/41 total pytest pass)
+│   │   └── test_phase3_phase4_phase5.py  ← PASS ✅ (42/42 total pytest pass)
 │   ├── requirements.txt
 │   └── uploads/vault/               ← Encrypted file storage
 ├── frontend/

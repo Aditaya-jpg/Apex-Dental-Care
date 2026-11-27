@@ -20,7 +20,7 @@ The **PGI Dental Management System** employs a comprehensive, multi-tiered testi
 
 | Test Suite | Framework | Scope / Components Tested |
 |---|---|---|
-| **Backend Unit & Integration** | Pytest + HTTPX (`41 tests`) | Locked 8-table schema, zero billing/reports check, auth & refresh rotation, AES-256-GCM CBCT vault, student isolation & instant JWT revocation, receptionist attendance-only, patient portal privacy, CR registration, disease segregation, date-wise X-rays, tracker/enquiries, perio/surgical/misc/notices, EN/HI/PA HarfBuzz PDFs, smart calendar & `.ics`, recalls, preventive care, social webhooks. |
+| **Backend Unit & Integration** | Pytest + HTTPX (`42 tests`) | Locked 8-table schema, zero billing/reports check, auth & refresh rotation, AES-256-GCM CBCT vault, student isolation & instant JWT revocation, receptionist attendance-only, patient portal privacy, CR registration, disease segregation, date-wise X-rays, tracker/enquiries, perio/surgical/misc/notices, EN/HI/PA HarfBuzz PDFs & dynamic clinical translation, smart calendar & `.ics`, recalls, preventive care, social webhooks. |
 | **Backend Security & RBAC** | Pytest | Role boundary enforcement, receptionist denied clinical edits, doctor denied admin operations, student cross-patient 403, SQL injection payloads, path traversal & magic-byte upload checks. |
 | **Frontend Unit & Components** | Vitest + React Testing Library (`8 tests`) | `FDIToothChart` 32 permanent teeth rendering & condition updates; `RBAC` & `ProtectedRoute` role gates across PGI roles. |
 | **End-to-End (E2E)** | Playwright | Browser verification across Receptionist, Doctor, Admin-Doctor, Student, Admin, and Patient Portal workflows + `1440px`/`768px`/`390px` viewports. |
@@ -29,7 +29,7 @@ The **PGI Dental Management System** employs a comprehensive, multi-tiered testi
 
 ## 2. Executing Backend Tests
 
-The backend test suite executes **41 comprehensive test cases** against the locked 8-table schema and seed fixtures.
+The backend test suite executes **42 comprehensive test cases** against the locked 8-table schema and seed fixtures.
 
 ```bash
 cd backend
@@ -49,6 +49,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 - `test_receptionist_attendance_only` & `test_patient_portal_privacy_and_opt_in_sharing`: Confirms strict role isolation.
 - `test_fdi_permanent_teeth_initialization` & `test_fdi_invalid_tooth_number`: Verifies 32 FDI teeth (`11–48`) and 422 rejection of invalid tooth numbers.
 - `test_phase4_visits_perio_surgical_misc_notices_and_media` & `test_phase4_multilingual_prescriptions_instructions_and_harfbuzz_pdfs`: Verifies 6-site Perio, Surgical Logs, and EN/HI/PA HarfBuzz PDF generation.
+- `test_dynamic_translation_for_arbitrary_instructions`: Verifies dynamic Hindi/Punjabi translation of arbitrary clinical instructions, diagnosis notes, and medication instructions with caching.
 - `test_phase5_calendar_ics_notifications_recalls_preventive_and_social`: Verifies Smart Calendar, `.ics`, `PGIDNT` notifications, recalls, preventive care, and social leads.
 
 ---

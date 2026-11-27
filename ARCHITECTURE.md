@@ -59,6 +59,7 @@ The backend enforces strict separation of concerns across 5 distinct tiers:
 
 ### 5. Cross-Cutting Utilities (`app/audit/`, `app/pdf/`, `app/storage/`, `app/i18n/`)
 - **Centralized Audit Logger:** Captures mutating events in `care_and_system_logs` with recursive sensitive-data sanitization.
+- **Dynamic Clinical i18n (`app/i18n/translations.py`):** Translates static labels, timing/dosage schedules, and arbitrary custom clinical advice/instructions into Hindi and Punjabi (`translate_clinical_text` via MyMemory API with in-memory caching and offline fallback).
 - **HarfBuzz + ReportLab PDF Generator:** Shapes English, Hindi (Devanagari), and Punjabi (Gurmukhi) prescriptions using `uharfbuzz` + `fonttools` glyph paths with bundled Noto fonts.
 - **AES-256-GCM Storage Vault (`PGIV1`):** Protects uploads with 1 MB chunked AEAD encryption, magic-byte verification, SHA-256 checksums, and up to 500 MB CBCT streaming.
 

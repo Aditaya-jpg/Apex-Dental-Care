@@ -38,6 +38,7 @@ The **PGI Dental Management System** is a **role-based clinical electronic denta
 
 6. **Multilingual Prescriptions & HarfBuzz PDF Generation (EN / HI / PA):**
    - Auto-Rx clinical templates, dental pharmacy formulary, and localized pre/post-treatment instructions in **English**, **Hindi**, and **Punjabi**.
+   - Dynamic translation (`translate_clinical_text`) automatically translates arbitrary diagnosis summaries, general advice, care instructions, and custom medication notes into Hindi/Punjabi with in-memory caching and safe offline fallback.
    - Official vector PDF generated via ReportLab with `uharfbuzz` + `fonttools` OpenType shaping and bundled Noto Sans / Devanagari / Gurmukhi fonts.
 
 7. **Patient Care Hub, Recalls & Privacy-Isolated Patient Portal:**
@@ -102,6 +103,16 @@ Once started:
 ---
 
 ## 💻 Local Development Setup
+
+### One-Command Launcher (macOS / Linux / Windows)
+
+```bash
+# macOS / Linux (creates backend .venv & installs deps automatically if missing):
+./start.sh
+
+# Windows:
+start.bat
+```
 
 ### 1. Backend Setup
 
