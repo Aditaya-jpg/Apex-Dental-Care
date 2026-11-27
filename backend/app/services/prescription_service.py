@@ -12,6 +12,7 @@ from app.i18n.translations import (
     localize_medication_item,
     lookup_instruction,
     normalize_language,
+    translate_clinical_text,
 )
 from app.models.clinical_record import ClinicalRecord
 from app.models.doctor import Doctor
@@ -116,10 +117,11 @@ class PrescriptionService:
             meds_payload.append(m_dict)
 
         labels = get_prescription_labels(lang)
+        raw_summary = data.treatment_instructions or data.general_instructions
         localized_summary = (
-            data.treatment_instructions
-            or data.general_instructions
-            or f"{labels['prescription_title']} ({len(meds_payload)} items)"
+            translate_clinical_text(raw_summary, lang)
+            if raw_summary
+            else f"{labels['prescription_title']} ({len(meds_payload)} items)"
         )
 
         payload_json = {

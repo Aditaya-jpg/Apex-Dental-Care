@@ -5,7 +5,78 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import httpx
+
 SUPPORTED_LANGUAGES = ("en", "hi", "pa")
+_DYNAMIC_TRANSLATION_CACHE: dict[tuple[str, str], str] = {}
+_MYMEMORY_API_URL = "https://api.mymemory.translated.net/get"
+
+
+def _has_target_script(text: str, lang: str) -> bool:
+    if lang == "hi":
+        return any(0x0900 <= ord(ch) <= 0x097F for ch in text)
+    if lang == "pa":
+        return any(0x0A00 <= ord(ch) <= 0x0A7F for ch in text)
+    return False
+
+
+def _split_translation_chunks(text: str, max_len: int = 420) -> list[str]:
+    chunks: list[str] = []
+    for line in text.splitlines():
+        part = line.strip()
+        if not part:
+            chunks.append("")
+            continue
+        while len(part) > max_len:
+            cut = part.rfind(" ", 0, max_len)
+            if cut <= 0:
+                cut = max_len
+            chunks.append(part[:cut].strip())
+            part = part[cut:].strip()
+        if part:
+            chunks.append(part)
+    return chunks
+
+
+def translate_clinical_text(text: str | None, language: str | None) -> str:
+    """Dynamically translate arbitrary clinical text to Hindi or Punjabi with caching and offline fallback."""
+    clean = (text or "").strip()
+    lang = normalize_language(language)
+    if not clean or lang == "en" or _has_target_script(clean, lang):
+        return clean
+
+    cache_key = (clean, lang)
+    if cache_key in _DYNAMIC_TRANSLATION_CACHE:
+        return _DYNAMIC_TRANSLATION_CACHE[cache_key]
+
+    try:
+        translated_lines: list[str] = []
+        for chunk in _split_translation_chunks(clean):
+            if not chunk:
+                translated_lines.append("")
+                continue
+            resp = httpx.get(
+                _MYMEMORY_API_URL,
+                params={"q": chunk, "langpair": f"en|{lang}"},
+                timeout=4.0,
+            )
+            if resp.status_code != 200:
+                return clean
+            data = resp.json()
+            if data.get("responseStatus") != 200:
+                return clean
+            translated_chunk = ((data.get("responseData") or {}).get("translatedText") or "").strip()
+            if not translated_chunk or "MYMEMORY WARNING" in translated_chunk.upper():
+                return clean
+            translated_lines.append(translated_chunk)
+
+        result = "\n".join(translated_lines).strip() or clean
+        if len(_DYNAMIC_TRANSLATION_CACHE) >= 1024:
+            _DYNAMIC_TRANSLATION_CACHE.clear()
+        _DYNAMIC_TRANSLATION_CACHE[cache_key] = result
+        return result
+    except Exception:
+        return clean
 
 
 def normalize_language(language: str | None) -> str:
@@ -516,7 +587,7 @@ def localize_medication_item(item: dict[str, Any], language: str | None) -> str:
 
     parts = [p for p in [loc_freq, loc_timing, loc_dur] if p]
     if base_instr:
-        parts.append(base_instr)
+        parts.append(translate_clinical_text(base_instr, lang))
     return " • ".join(parts)
 
 

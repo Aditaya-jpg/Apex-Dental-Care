@@ -31,6 +31,7 @@ from app.i18n.translations import (
     get_prescription_labels,
     localize_medication_item,
     normalize_language,
+    translate_clinical_text,
 )
 
 FONTS_DIR = Path(__file__).resolve().parent / "fonts"
@@ -539,9 +540,10 @@ def generate_prescription_pdf(rx_record: Any, patient: Any, doctor: Any) -> byte
 
     diagnosis_summary = payload.get("diagnosis_summary")
     if diagnosis_summary:
+        diag_text = translate_clinical_text(_strip_html(str(diagnosis_summary)), language)
         story.append(
             ShapedParagraph(
-                f"{labels['diagnosis']}: {_strip_html(str(diagnosis_summary))}",
+                f"{labels['diagnosis']}: {diag_text}",
                 font_size=9.5,
                 bold=True,
                 color=colors.HexColor("#0f172a"),
@@ -571,7 +573,11 @@ def generate_prescription_pdf(rx_record: Any, patient: Any, doctor: Any) -> byte
     ]
 
     for idx, item in enumerate(payload.get("medications", []), start=1):
-        loc_inst = item.get("localized_instructions") or localize_medication_item(item, language)
+        loc_inst = (
+            localize_medication_item(item, language)
+            if language != "en"
+            else (item.get("localized_instructions") or localize_medication_item(item, language))
+        )
         med_table_data.append([
             ShapedParagraph(str(idx), font_size=8.8),
             ShapedParagraph(str(item.get("medicine_name", "")), font_size=8.8, bold=True),
@@ -597,13 +603,15 @@ def generate_prescription_pdf(rx_record: Any, patient: Any, doctor: Any) -> byte
 
     general_instructions = payload.get("general_instructions")
     if general_instructions:
+        gen_text = translate_clinical_text(_strip_html(str(general_instructions)), language)
         story.append(ShapedParagraph(f"{labels['general_advice']}:", font_size=9.5, bold=True, space_after=2))
-        story.append(ShapedParagraph(_strip_html(str(general_instructions)), font_size=9.2, space_after=8))
+        story.append(ShapedParagraph(gen_text, font_size=9.2, space_after=8))
 
     treatment_instructions = payload.get("treatment_instructions") or payload.get("localized_summary")
     if treatment_instructions:
+        treat_text = translate_clinical_text(_strip_html(str(treatment_instructions)), language)
         story.append(ShapedParagraph(f"{labels['care_instructions']}:", font_size=9.5, bold=True, space_after=2))
-        story.append(ShapedParagraph(_strip_html(str(treatment_instructions)), font_size=9.2, space_after=10))
+        story.append(ShapedParagraph(treat_text, font_size=9.2, space_after=10))
 
     story.append(Spacer(1, 18))
     footer_left = f"{labels['valid_note']}\n{labels['keep_safe_note']}"
